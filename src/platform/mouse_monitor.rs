@@ -31,12 +31,14 @@ enum RawMouseEvent {
 #[cfg(target_os = "macos")]
 struct TapSharedState {
     enabled: AtomicBool,
+    middle_click_enabled: AtomicBool,
     global_priority: AtomicBool,
     drag_threshold_bits: AtomicU32,
     dismiss_armed: AtomicBool,
     ignore_rect: RwLock<Option<[f32; 4]>>,
     pending_right: Mutex<Option<(f64, f64)>>,
     suppress_right: AtomicBool,
+    suppress_middle: AtomicBool,
     gesture_sent: AtomicBool,
     wake: WakeHandle,
 }
@@ -46,12 +48,14 @@ impl TapSharedState {
     fn new(config: &GestureConfig, wake: WakeHandle) -> Self {
         Self {
             enabled: AtomicBool::new(config.enabled),
+            middle_click_enabled: AtomicBool::new(config.middle_click_enabled),
             global_priority: AtomicBool::new(config.global_priority),
             drag_threshold_bits: AtomicU32::new(config.drag_threshold_px.to_bits()),
             dismiss_armed: AtomicBool::new(false),
             ignore_rect: RwLock::new(None),
             pending_right: Mutex::new(None),
             suppress_right: AtomicBool::new(false),
+            suppress_middle: AtomicBool::new(false),
             gesture_sent: AtomicBool::new(false),
             wake,
         }
@@ -59,6 +63,8 @@ impl TapSharedState {
 
     fn apply_config(&self, config: &GestureConfig) {
         self.enabled.store(config.enabled, Ordering::Relaxed);
+        self.middle_click_enabled
+            .store(config.middle_click_enabled, Ordering::Relaxed);
         self.global_priority
             .store(config.global_priority, Ordering::Relaxed);
         self.drag_threshold_bits
@@ -102,7 +108,7 @@ impl MouseGestureMonitor {
         #[cfg(target_os = "macos")]
         {
             self.shared.apply_config(config);
-            if config.enabled {
+            if config.enabled || config.middle_click_enabled {
                 if let Err(err) = self.ensure_tap() {
                     log::warn!("mouse gesture tap start failed: {err}");
                 }
@@ -191,12 +197,15 @@ mod macos_impl {
     use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
     use core_graphics::event::{
         CGEvent, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
-        CGEventType,
+        CGEventType, EventField,
     };
     use std::sync::atomic::Ordering;
     use std::sync::mpsc::Sender;
     use std::sync::Arc;
     use std::thread;
+
+    /// macOS 中键 buttonNumber（kCGMouseButtonCenter）。
+    const MIDDLE_BUTTON: i64 = 2;
 
     pub fn spawn_event_tap(
         shared: Arc<TapSharedState>,
@@ -223,6 +232,8 @@ mod macos_impl {
             CGEventType::RightMouseDragged,
             CGEventType::RightMouseUp,
             CGEventType::LeftMouseDown,
+            CGEventType::OtherMouseDown,
+            CGEventType::OtherMouseUp,
         ];
 
         let shared_cb = shared.clone();
@@ -260,7 +271,22 @@ mod macos_impl {
         event_type: CGEventType,
         event: &CGEvent,
     ) -> Option<CGEvent> {
-        if !shared.enabled.load(Ordering::Relaxed) {
+        // 左键外点收起：只要 dismiss_armed 就处理，不依赖手势开关。
+        if matches!(event_type, CGEventType::LeftMouseDown) {
+            if shared.dismiss_armed.load(Ordering::Relaxed) {
+                let location = event.location();
+                let _ = tx.send(RawMouseEvent::LeftDown {
+                    x: location.x,
+                    y: location.y,
+                });
+                shared.wake_ui();
+            }
+            return Some(event.clone());
+        }
+
+        let right_enabled = shared.enabled.load(Ordering::Relaxed);
+        let middle_enabled = shared.middle_click_enabled.load(Ordering::Relaxed);
+        if !right_enabled && !middle_enabled {
             return Some(event.clone());
         }
 
@@ -278,7 +304,7 @@ mod macos_impl {
         };
 
         match event_type {
-            CGEventType::RightMouseDown => {
+            CGEventType::RightMouseDown if right_enabled => {
                 if point_in_ignore_rect(shared, x, y) {
                     return Some(event.clone());
                 }
@@ -289,7 +315,7 @@ mod macos_impl {
                 shared.wake_ui();
                 Some(event.clone())
             }
-            CGEventType::RightMouseDragged => {
+            CGEventType::RightMouseDragged if right_enabled => {
                 let mut triggered = false;
                 if let Ok(pending) = shared.pending_right.lock() {
                     if let Some((ox, oy)) = *pending {
@@ -314,7 +340,7 @@ mod macos_impl {
                 }
                 Some(event.clone())
             }
-            CGEventType::RightMouseUp => {
+            CGEventType::RightMouseUp if right_enabled => {
                 if let Ok(mut pending) = shared.pending_right.lock() {
                     *pending = None;
                 }
@@ -324,10 +350,30 @@ mod macos_impl {
                 }
                 Some(event.clone())
             }
-            CGEventType::LeftMouseDown => {
-                if shared.dismiss_armed.load(Ordering::Relaxed) {
-                    let _ = tx.send(RawMouseEvent::LeftDown { x, y });
-                    shared.wake_ui();
+            CGEventType::OtherMouseDown if middle_enabled => {
+                let button = event.get_integer_value_field(EventField::MOUSE_EVENT_BUTTON_NUMBER);
+                if button != MIDDLE_BUTTON {
+                    return Some(event.clone());
+                }
+                if point_in_ignore_rect(shared, x, y) {
+                    return Some(event.clone());
+                }
+                let _ = tx.send(RawMouseEvent::GestureTriggered { x, y });
+                shared.wake_ui();
+                if global_priority {
+                    shared.suppress_middle.store(true, Ordering::Relaxed);
+                    return consume(event);
+                }
+                Some(event.clone())
+            }
+            CGEventType::OtherMouseUp if middle_enabled => {
+                let button = event.get_integer_value_field(EventField::MOUSE_EVENT_BUTTON_NUMBER);
+                if button != MIDDLE_BUTTON {
+                    return Some(event.clone());
+                }
+                let was_suppressing = shared.suppress_middle.swap(false, Ordering::Relaxed);
+                if was_suppressing {
+                    return consume(event);
                 }
                 Some(event.clone())
             }

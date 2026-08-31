@@ -72,6 +72,7 @@ pub struct GlobalConfig {
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct GestureSettingsFile {
     pub enabled: Option<bool>,
+    pub middle_click_enabled: Option<bool>,
     pub drag_threshold_px: Option<f32>,
     pub dismiss_on_outside_click: Option<bool>,
     pub hide_after_button: Option<bool>,
@@ -83,6 +84,9 @@ impl GestureSettingsFile {
         let defaults = GestureConfig::default();
         GestureConfig {
             enabled: self.enabled.unwrap_or(defaults.enabled),
+            middle_click_enabled: self
+                .middle_click_enabled
+                .unwrap_or(defaults.middle_click_enabled),
             drag_threshold_px: self.drag_threshold_px.unwrap_or(defaults.drag_threshold_px),
             dismiss_on_outside_click: self
                 .dismiss_on_outside_click

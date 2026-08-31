@@ -95,6 +95,7 @@ fn button_height_for_file(settings: &PanelSettings) -> Option<f32> {
 fn gesture_settings_to_file(gesture: &super::app_config::GestureConfig) -> GestureSettingsFile {
     GestureSettingsFile {
         enabled: Some(gesture.enabled),
+        middle_click_enabled: Some(gesture.middle_click_enabled),
         drag_threshold_px: Some(gesture.drag_threshold_px),
         dismiss_on_outside_click: Some(gesture.dismiss_on_outside_click),
         hide_after_button: Some(gesture.hide_after_button),

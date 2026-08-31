@@ -39,10 +39,12 @@ pub struct AppConfig {
     pub context_mode: ContextMode,
 }
 
-/// 全局鼠标手势：右键按住拖动唤起面板
+/// 全局鼠标手势：右键按住拖动 / 中键点击唤起面板
 #[derive(Debug, Clone)]
 pub struct GestureConfig {
     pub enabled: bool,
+    /// 中键单击在光标位置唤起面板
+    pub middle_click_enabled: bool,
     pub drag_threshold_px: f32,
     pub dismiss_on_outside_click: bool,
     pub hide_after_button: bool,
@@ -54,6 +56,7 @@ impl Default for GestureConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            middle_click_enabled: false,
             drag_threshold_px: 8.0,
             dismiss_on_outside_click: true,
             hide_after_button: true,

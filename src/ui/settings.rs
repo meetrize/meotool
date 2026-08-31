@@ -454,26 +454,29 @@ impl SettingsEditor {
         ui.heading("鼠标手势");
         let gesture = &mut self.draft.gesture;
         ui.checkbox(&mut gesture.enabled, "启用右键拖动唤起面板");
+        ui.checkbox(&mut gesture.middle_click_enabled, "启用中键点击唤起面板");
         ui.checkbox(
             &mut gesture.global_priority,
-            "全局优先（后台可唤起，拖动时抢占右键事件）",
+            "全局优先（后台可唤起，手势时抢占鼠标事件）",
         );
-        ui.add_enabled_ui(gesture.enabled, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("拖动阈值 (px)");
-                ui.add(
-                    egui::DragValue::new(&mut gesture.drag_threshold_px)
-                        .range(2.0..=64.0)
-                        .speed(0.5),
-                );
-            });
+        ui.add_enabled_ui(gesture.enabled || gesture.middle_click_enabled, |ui| {
+            if gesture.enabled {
+                ui.horizontal(|ui| {
+                    ui.label("拖动阈值 (px)");
+                    ui.add(
+                        egui::DragValue::new(&mut gesture.drag_threshold_px)
+                            .range(2.0..=64.0)
+                            .speed(0.5),
+                    );
+                });
+            }
             ui.checkbox(&mut gesture.dismiss_on_outside_click, "点击面板外自动收起");
             ui.checkbox(&mut gesture.hide_after_button, "鼠标移出后自动收起");
         });
         if gesture.global_priority {
             ui.label(
                 egui::RichText::new(
-                    "需已授予「输入监控」与「辅助功能」权限；开启后右键拖动将优先于其他应用。",
+                    "需已授予「输入监控」与「辅助功能」权限；开启后手势将优先于其他应用。",
                 )
                 .weak()
                 .small(),

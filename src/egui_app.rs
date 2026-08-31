@@ -924,6 +924,7 @@ impl MeoToolApp {
         if let Some(monitor) = &mut self.mouse_gesture {
             let mut cfg = self.state.app_config.gesture.clone();
             cfg.enabled = false;
+            cfg.middle_click_enabled = false;
             monitor.update_config(&cfg);
         }
     }
@@ -1207,6 +1208,7 @@ impl MeoToolApp {
         {
             let mut cfg = self.state.app_config.gesture.clone();
             cfg.enabled = false;
+            cfg.middle_click_enabled = false;
             monitor.update_config(&cfg);
             let _ = monitor.poll();
             return;

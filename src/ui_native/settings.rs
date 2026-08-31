@@ -280,6 +280,7 @@ struct AppearanceFields {
 
 struct GestureFields {
     enabled: Retained<NSSwitch>,
+    middle_click: Retained<NSSwitch>,
     global_priority: Retained<NSSwitch>,
     threshold: Retained<NSSlider>,
     threshold_label: Retained<NSTextField>,
@@ -929,6 +930,10 @@ impl SettingsWindow {
         // Gesture
         set_switch(&self.gesture.enabled, self.draft.gesture.enabled);
         set_switch(
+            &self.gesture.middle_click,
+            self.draft.gesture.middle_click_enabled,
+        );
+        set_switch(
             &self.gesture.global_priority,
             self.draft.gesture.global_priority,
         );
@@ -1215,6 +1220,7 @@ impl SettingsWindow {
         store_theme_from_wells(&self.appearance, &mut self.draft.global_panel.settings.theme, true);
 
         self.draft.gesture.enabled = switch_on(&self.gesture.enabled);
+        self.draft.gesture.middle_click_enabled = switch_on(&self.gesture.middle_click);
         self.draft.gesture.global_priority = switch_on(&self.gesture.global_priority);
         self.draft.gesture.drag_threshold_px =
             unsafe { self.gesture.threshold.doubleValue() }.clamp(2.0, 64.0) as f32;
@@ -1586,14 +1592,20 @@ fn append_gesture_section(
 ) -> GestureFields {
     add_arranged(page, &section_title(mtm, "鼠标手势"));
     let (r1, enabled) = labeled_switch(mtm, "启用右键拖动唤起");
+    let (r_mid, middle_click) = labeled_switch(mtm, "启用中键点击唤起");
     let (r2, global_priority) = labeled_switch(mtm, "全局优先");
     add_arranged(page, &r1);
+    add_arranged(page, &r_mid);
+    add_arranged(
+        page,
+        &help_label(mtm, "中键单击时在光标位置显示面板，可与右键拖动同时开启。"),
+    );
     add_arranged(page, &r2);
     add_arranged(
         page,
         &help_label(
             mtm,
-            "全局优先需已授予「输入监控」与「辅助功能」；开启后右键拖动将优先于其他应用。",
+            "全局优先需已授予「输入监控」与「辅助功能」；开启后手势将优先于其他应用。",
         ),
     );
 
@@ -1627,7 +1639,13 @@ fn append_gesture_section(
     add_arranged(page, &r3);
     add_arranged(page, &r4);
 
-    for sw in [&enabled, &global_priority, &dismiss_outside, &hide_after] {
+    for sw in [
+        &enabled,
+        &middle_click,
+        &global_priority,
+        &dismiss_outside,
+        &hide_after,
+    ] {
         unsafe {
             sw.setTarget(Some(target));
             sw.setAction(Some(objc2::sel!(fieldChanged:)));
@@ -1636,6 +1654,7 @@ fn append_gesture_section(
 
     GestureFields {
         enabled,
+        middle_click,
         global_priority,
         threshold,
         threshold_label,

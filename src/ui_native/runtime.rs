@@ -1129,6 +1129,7 @@ impl NativeState {
         if self.app_picker.as_ref().is_some_and(|p| p.is_picking()) {
             let mut cfg = self.core.app_config.gesture.clone();
             cfg.enabled = false;
+            cfg.middle_click_enabled = false;
             monitor.update_config(&cfg);
             let _ = monitor.poll();
             return;
