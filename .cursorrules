@@ -1,0 +1,11 @@
+When Cursor auto-generates a Git commit message for this repository (Source Control sparkle button or Agent commit), write ALL commit messages in Simplified Chinese (简体中文). Never use English for commit titles or bodies.
+
+格式：
+- 标题：一行概括，不超过 72 字，动词开头，不加句号
+- 正文（可选）：空一行后说明「为什么改」，而非逐条罗列文件
+- 不使用 Conventional Commits 英文前缀（如 feat:、fix:），直接用中文描述
+
+示例：
+修复 macOS 权限弹窗在重复打开时无法正确关闭的问题
+
+根据 git diff 的实际变更撰写，准确反映改动意图；语气简洁、专业。

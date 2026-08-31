@@ -1,0 +1,40 @@
+# Rust / 构建产物
+/target/
+/dist/
+**/*.rs.bk
+
+# 锁文件：应用（binary）建议提交 Cargo.lock；若仅作库开发可取消下一行注释
+# Cargo.lock
+
+# macOS
+.DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+
+# 编辑器 / 本地 AI 工具
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.qwen/
+.cursor/plans/
+
+# 个人笔记与内部代理草稿（不对外）
+notes.md
+/internal/
+
+# 本机私有配置（含快捷键、脚本路径等）；仓库保留 configs/config.toml 作为默认示例
+configs/config.local.toml
+configs/*.local.toml
+*.toml.bak
+*.toml.corrupt
+
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json

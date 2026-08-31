@@ -1,0 +1,233 @@
+window_poll_interval_ms = 200
+
+[global]
+toggle_visibility = "Cmd+Alt+Shift+3"
+reload_config = "Cmd+Shift+R"
+quit = "Cmd+Shift+Q"
+open_settings = "Cmd+Shift+,"
+
+[global.panel]
+rows = 3
+cols = 3
+display_mode = "icon"
+collapsed = false
+opacity = 0.9
+button_size = 50.0
+gap = 5.0
+collapsed_icon = "pet-cat.png"
+
+[global.panel.position]
+x = 100.0
+y = 100.0
+
+[global.panel.theme]
+background_color = "transparent"
+button_color = "rgba(175, 182, 202, 0.878)"
+letter_background_color = "transparent"
+letter_color = "rgba(0, 0, 0, 0.875)"
+letter_size = 14.0
+letter_font = ""
+window_border_enabled = false
+window_border_width = 1.0
+window_border_color = "rgba(56, 61, 61, 0.898)"
+button_border_enabled = false
+button_border_width = 4.0
+
+[global.gesture]
+enabled = true
+drag_threshold_px = 8.0
+dismiss_on_outside_click = true
+hide_after_button = true
+global_priority = true
+
+[[profiles]]
+name = "default"
+
+[profiles.panel]
+collapsed = true
+
+[profiles.panel.theme]
+
+[[profiles.buttons]]
+label = "复制"
+icon = "copy.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Cmd",
+    "c",
+]
+
+[[profiles.buttons]]
+label = "粘贴"
+icon = "clipboard.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Cmd",
+    "v",
+]
+
+[[profiles.buttons]]
+label = "撤销"
+icon = "click.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Cmd",
+    "z",
+]
+
+[[profiles.buttons]]
+label = "截图"
+icon = "screenshot.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Cmd",
+    "Shift",
+    "4",
+]
+
+[[profiles.buttons]]
+label = "关闭"
+icon = "close.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Cmd",
+    "w",
+]
+
+[[profiles]]
+name = "vscode"
+
+[profiles.match]
+bundle_id = "com.microsoft.VSCode"
+app_name = "Code"
+
+[profiles.panel]
+rows = 2
+cols = 4
+display_mode = "index_icon"
+
+[profiles.panel.theme]
+
+[[profiles.buttons]]
+label = "保存"
+icon = "save.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Cmd",
+    "s",
+]
+
+[[profiles.buttons]]
+label = "格式化"
+icon = "find.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Shift",
+    "Alt",
+    "f",
+]
+
+[[profiles.buttons]]
+label = "命令面板"
+icon = "select.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Cmd",
+    "Shift",
+    "p",
+]
+
+[[profiles.buttons]]
+label = "终端"
+icon = "new.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Ctrl",
+    "`",
+]
+
+[[profiles]]
+name = "browser"
+
+[profiles.match]
+app_name = "Google Chrome"
+
+[profiles.panel]
+rows = 1
+cols = 3
+display_mode = "icon"
+
+[profiles.panel.theme]
+window_border_enabled = false
+window_border_width = 1.0
+
+[[profiles.buttons]]
+label = "新标签"
+icon = "new.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Cmd",
+    "t",
+]
+
+[[profiles.buttons]]
+label = "关闭标签"
+icon = "close.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Cmd",
+    "w",
+]
+
+[[profiles.buttons]]
+label = "刷新"
+icon = "undo.png"
+enabled = true
+
+[profiles.buttons.action]
+type = "hotkey"
+keys = [
+    "Cmd",
+    "r",
+]
+
+# 打开文件动作示例（取消注释后生效）：
+# [[profiles.buttons]]
+# label = "文档"
+# enabled = true
+# [profiles.buttons.action]
+# type = "open_file"
+# path = "~/Documents"

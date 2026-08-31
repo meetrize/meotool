@@ -1,0 +1,128 @@
+[package]
+name = "meotool"
+version = "0.1.0"
+edition = "2021"
+description = "Window-aware floating shortcut panel"
+license = "MIT"
+
+[features]
+# 默认原生 AppKit（低内存）；egui 回归：
+#   cargo build --release --no-default-features --features ui-egui
+default = ["ui-native"]
+ui-egui = ["dep:eframe", "dep:egui", "renderer-glow"]
+ui-native = [
+    "dep:objc2",
+    "dep:objc2-foundation",
+    "dep:objc2-app-kit",
+    "dep:objc2-quartz-core",
+    "dep:block2",
+    "dep:dispatch",
+]
+renderer-glow = ["eframe/glow"]
+renderer-wgpu = ["eframe/wgpu"]
+
+[dependencies]
+eframe = { version = "0.29", default-features = false, optional = true }
+egui = { version = "0.29", default-features = false, optional = true }
+enigo = "0.6"
+log = "0.4"
+env_logger = "0.11"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+dirs = "5"
+image = { version = "0.25", default-features = false, features = ["png"] }
+active-win-pos-rs = "0.8"
+regex = "1"
+plist = "1"
+global-hotkey = "0.6"
+toml_edit = "0.22"
+notify = "6"
+tray-icon = "0.19"
+core-graphics = "0.24"
+core-foundation = "0.10"
+mimalloc = { version = "0.1", default-features = false }
+
+# AppKit 原生 UI（阶段 1）
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true, default-features = false, features = [
+    "NSArray",
+    "NSData",
+    "NSAttributedString",
+    "NSDictionary",
+    "NSGeometry",
+    "NSNotification",
+    "NSObjCRuntime",
+    "NSObject",
+    "NSString",
+    "NSTimer",
+    "NSValue",
+    "NSURL",
+    "NSOperation",
+    "NSThread",
+    "block2",
+    "objc2-core-foundation",
+] }
+objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = [
+    "NSAlert",
+    "NSApplication",
+    "NSBox",
+    "NSButton",
+    "NSButtonCell",
+    "NSCell",
+    "NSClipView",
+    "NSColor",
+    "NSColorSpace",
+    "NSColorWell",
+    "NSControl",
+    "NSEvent",
+    "NSFont",
+    "NSGraphics",
+    "NSImage",
+    "NSImageView",
+    "NSLayoutAnchor",
+    "NSLayoutConstraint",
+    "NSMenu",
+    "NSMenuItem",
+    "NSOpenPanel",
+    "NSPanel",
+    "NSPopUpButton",
+    "NSSavePanel",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSScreen",
+    "NSScrollView",
+    "NSSearchField",
+    "NSSearchFieldCell",
+    "NSSlider",
+    "NSStackView",
+    "NSSwitch",
+    "NSSegmentedControl",
+    "NSTableColumn",
+    "NSTableView",
+    "NSAttributedString",
+    "NSTextStorage",
+    "NSText",
+    "NSTextField",
+    "NSTextView",
+    "NSUserInterfaceLayout",
+    "NSView",
+    "NSWindow",
+    "NSWorkspace",
+    "block2",
+    "objc2-core-graphics",
+    "objc2-quartz-core",
+] }
+objc2-quartz-core = { version = "0.3", optional = true, default-features = false, features = [
+    "CALayer",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+] }
+block2 = { version = "0.6", optional = true }
+dispatch = { version = "0.2", optional = true }
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"

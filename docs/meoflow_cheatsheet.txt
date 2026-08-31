@@ -1,0 +1,15 @@
+一行写一步；# 开头为注释。
+
+等待 100          — 休眠毫秒
+输入 "文字"       — 逐字输入（不经剪贴板）
+粘贴 "文字"       — 剪贴板 + Cmd+V
+按键 Enter        — 单键（Tab/Esc/Delete/Space/方向键…）
+快捷键 Cmd+S      — 组合键
+点击 0.5 0.3      — 窗口相对坐标（0~1）
+打开应用 "Notes"  — 应用名 / .app 路径 / Bundle ID
+打开链接 "https://…"
+打开文件 "~/Documents/a.pdf"
+执行命令 "ls"     — Shell（同步，有超时）
+激活应用 "com.apple.Notes"
+
+英文别名：wait、type、paste、key、hotkey、click、open_app、open_url、open_file、shell、activate
