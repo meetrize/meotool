@@ -490,8 +490,6 @@ pub fn field_string(field: &NSTextField) -> String {
 // ── 按钮编辑窗：滚动主内容 + 固定底栏 ─────────────────────────────
 
 pub const BTN_EDITOR_FOOTER_H: f64 = 52.0;
-pub const BTN_EDITOR_MIN_W: f64 = 480.0;
-pub const BTN_EDITOR_MIN_H: f64 = 520.0;
 
 pub struct ButtonEditorChrome {
     pub scroll: Retained<NSScrollView>,
@@ -589,8 +587,8 @@ pub fn layout_button_editor_chrome(
 ) {
     unsafe {
         let b = content.bounds();
-        let w = b.size.width.max(BTN_EDITOR_MIN_W);
-        let h = b.size.height.max(BTN_EDITOR_MIN_H);
+        let w = b.size.width.max(1.0);
+        let h = b.size.height.max(1.0);
         let body_h = (h - BTN_EDITOR_FOOTER_H).max(1.0);
 
         footer.setFrame(NSRect::new(
@@ -615,19 +613,22 @@ pub fn layout_button_editor_chrome(
             NSSize::new(w, body_h),
         ));
 
-        let bonus = (body_h - content_h).max(0.0).min(220.0);
-        let script_h = script_min_h + bonus;
-        let doc_h = content_h + bonus;
         let field_w = (w - 108.0 - CONTENT_PAD).max(200.0);
 
         if let Some(ss) = script_scroll {
+            // 脚本区：窗口变高时把多余高度给编辑器，避免底部空洞。
+            let bonus = (body_h - content_h).max(0.0).min(220.0);
+            let script_h = script_min_h + bonus;
+            let doc_h = content_h + bonus;
             ss.setFrame(NSRect::new(
                 NSPoint::new(108.0, script_y),
                 NSSize::new(field_w, script_h),
             ));
+            document.setFrameSize(NSSize::new(w, doc_h.max(body_h)));
+        } else {
+            // 外观窗：文档高度贴合内容，窗口默认高度也应等于 content_h + footer。
+            document.setFrameSize(NSSize::new(w, content_h.max(1.0)));
         }
-
-        document.setFrameSize(NSSize::new(w, doc_h.max(body_h)));
 
         let clip = scroll.contentView();
         scroll.reflectScrolledClipView(&clip);

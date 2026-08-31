@@ -97,6 +97,7 @@ pub(crate) fn labeled_pair(
 pub(crate) fn scope_bundle_row<T: Message>(
     mtm: MainThreadMarker,
     parent: &NSView,
+    field_width: f64,
     y: &mut f64,
     target: &T,
 ) -> (
@@ -110,15 +111,20 @@ pub(crate) fn scope_bundle_row<T: Message>(
             NSPoint::new(CONTENT_PAD, *y),
             NSSize::new(88.0, 22.0),
         ));
+        let pick_w = 88.0;
+        let gap = 8.0;
+        let end = FIELD_X + field_width;
+        let pick_x = end - pick_w;
+        let field_w = (pick_x - gap - FIELD_X).max(120.0);
         let field = NSTextField::initWithFrame(
             mtm.alloc(),
-            NSRect::new(NSPoint::new(FIELD_X, *y - 2.0), NSSize::new(226.0, 24.0)),
+            NSRect::new(NSPoint::new(FIELD_X, *y - 2.0), NSSize::new(field_w, 24.0)),
         );
         field.setEditable(true);
         field.setBezeled(true);
         let btn = NSButton::initWithFrame(
             mtm.alloc(),
-            NSRect::new(NSPoint::new(344.0, *y - 3.0), NSSize::new(88.0, 26.0)),
+            NSRect::new(NSPoint::new(pick_x, *y - 3.0), NSSize::new(pick_w, 26.0)),
         );
         btn.setTitle(&NSString::from_str("点选"));
         btn.setTarget(Some(action_target(target)));
@@ -160,6 +166,7 @@ pub(crate) fn switch_row<T: Message>(
 pub(crate) fn icon_row<T: Message>(
     mtm: MainThreadMarker,
     parent: &NSView,
+    field_width: f64,
     y: &mut f64,
     target: &T,
 ) -> (Retained<NSTextField>, Retained<NSImageView>) {
@@ -175,9 +182,19 @@ pub(crate) fn icon_row<T: Message>(
         );
         preview.setEditable(false);
         preview.setImageScaling(NSImageScaling::ScaleProportionallyDown);
+
+        let clear_w = 56.0;
+        let pick_w = 72.0;
+        let gap = 6.0;
+        let end = FIELD_X + field_width;
+        let clear_x = end - clear_w;
+        let pick_x = clear_x - gap - pick_w;
+        let text_x = FIELD_X + 34.0;
+        let text_w = (pick_x - gap - text_x).max(80.0);
+
         let field = NSTextField::initWithFrame(
             mtm.alloc(),
-            NSRect::new(NSPoint::new(142.0, *y - 2.0), NSSize::new(214.0, 24.0)),
+            NSRect::new(NSPoint::new(text_x, *y - 2.0), NSSize::new(text_w, 24.0)),
         );
         field.setEditable(true);
         field.setBezeled(true);
@@ -186,14 +203,14 @@ pub(crate) fn icon_row<T: Message>(
         field.setAction(Some(objc2::sel!(iconEdited:)));
         let pick = NSButton::initWithFrame(
             mtm.alloc(),
-            NSRect::new(NSPoint::new(364.0, *y - 3.0), NSSize::new(72.0, 26.0)),
+            NSRect::new(NSPoint::new(pick_x, *y - 3.0), NSSize::new(pick_w, 26.0)),
         );
         pick.setTitle(&NSString::from_str("选择…"));
         pick.setTarget(Some(action_target(target)));
         pick.setAction(Some(objc2::sel!(pickIconClicked:)));
         let clear = NSButton::initWithFrame(
             mtm.alloc(),
-            NSRect::new(NSPoint::new(440.0, *y - 3.0), NSSize::new(56.0, 26.0)),
+            NSRect::new(NSPoint::new(clear_x, *y - 3.0), NSSize::new(clear_w, 26.0)),
         );
         clear.setTitle(&NSString::from_str("清除"));
         clear.setTarget(Some(action_target(target)));
@@ -240,6 +257,7 @@ pub(crate) fn popup<T: Message>(
     parent: &NSView,
     title: &str,
     items: &[&str],
+    field_width: f64,
     y: &mut f64,
     target: &T,
     action: objc2::runtime::Sel,
@@ -252,7 +270,10 @@ pub(crate) fn popup<T: Message>(
         ));
         let p = NSPopUpButton::initWithFrame_pullsDown(
             mtm.alloc(),
-            NSRect::new(NSPoint::new(FIELD_X, *y - 2.0), NSSize::new(364.0, 26.0)),
+            NSRect::new(
+                NSPoint::new(FIELD_X, *y - 2.0),
+                NSSize::new(field_width.max(120.0), 26.0),
+            ),
             false,
         );
         let titles: Vec<_> = items.iter().map(|s| NSString::from_str(s)).collect();
@@ -297,6 +318,7 @@ pub(crate) fn footer_btn<T: Message>(
 pub(crate) fn appearance_section<T: Message>(
     mtm: MainThreadMarker,
     parent: &NSView,
+    field_width: f64,
     y: &mut f64,
     target: &T,
 ) -> AppearanceUi {
@@ -337,9 +359,11 @@ pub(crate) fn appearance_section<T: Message>(
             &NSString::from_str("继承全局主题"),
             mtm,
         );
+        let hint_x = FIELD_X + PREVIEW_SIZE + 12.0;
+        let hint_w = (FIELD_X + field_width - hint_x).max(120.0);
         appearance_hint.setFrame(NSRect::new(
-            NSPoint::new(184.0, *y + 4.0),
-            NSSize::new(320.0, 18.0),
+            NSPoint::new(hint_x, *y + 4.0),
+            NSSize::new(hint_w, 18.0),
         ));
         appearance_hint.setTextColor(Some(&NSColor::secondaryLabelColor()));
 

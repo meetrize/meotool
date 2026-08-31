@@ -34,12 +34,12 @@ use super::button_editor_common::{
 use super::events::{emit, IconPickTarget, NativeUiEvent};
 use super::layout::{
     install_button_editor_chrome, layout_button_editor_chrome, scroll_document_to_top,
+    BTN_EDITOR_FOOTER_H,
 };
 
-const APPEARANCE_DEFAULT_W: f64 = 480.0;
-const APPEARANCE_DEFAULT_H: f64 = 520.0;
-const APPEARANCE_MIN_W: f64 = 440.0;
-const APPEARANCE_MIN_H: f64 = 420.0;
+const APPEARANCE_DEFAULT_W: f64 = 560.0;
+const APPEARANCE_MIN_W: f64 = 520.0;
+const APPEARANCE_MIN_H: f64 = 480.0;
 const FIELD_W: f64 = APPEARANCE_DEFAULT_W - FIELD_X - CONTENT_PAD;
 
 #[derive(Default)]
@@ -234,12 +234,14 @@ impl AppearanceEditorWindow {
             | NSWindowStyleMask::Closable
             | NSWindowStyleMask::Miniaturizable
             | NSWindowStyleMask::Resizable;
+        // 初始高度仅为占位；表单排完后按 content_h 收紧，避免竖向滚动条与底部空洞。
+        let provisional_h = 640.0;
         let window = unsafe {
             NSWindow::initWithContentRect_styleMask_backing_defer(
                 mtm.alloc(),
                 NSRect::new(
                     NSPoint::new(240.0, 120.0),
-                    NSSize::new(APPEARANCE_DEFAULT_W, APPEARANCE_DEFAULT_H),
+                    NSSize::new(APPEARANCE_DEFAULT_W, provisional_h),
                 ),
                 style,
                 NSBackingStoreType::Buffered,
@@ -257,7 +259,7 @@ impl AppearanceEditorWindow {
         let chrome = install_button_editor_chrome(
             mtm,
             &content,
-            NSSize::new(APPEARANCE_DEFAULT_W, APPEARANCE_DEFAULT_H),
+            NSSize::new(APPEARANCE_DEFAULT_W, provisional_h),
         );
         let document = chrome.document.clone();
         let scroll = chrome.scroll.clone();
@@ -273,8 +275,8 @@ impl AppearanceEditorWindow {
         let mut y = CONTENT_PAD;
         let enabled = switch_row(mtm, &document, "启用", &mut y, tg);
         let label = labeled(mtm, &document, "标签", FIELD_W, &mut y);
-        let (icon, icon_preview) = icon_row(mtm, &document, &mut y, tg);
-        let appearance = appearance_section(mtm, &document, &mut y, tg);
+        let (icon, icon_preview) = icon_row(mtm, &document, FIELD_W, &mut y, tg);
+        let appearance = appearance_section(mtm, &document, FIELD_W, &mut y, tg);
 
         y += 8.0;
         let scope_mode = popup(
@@ -282,16 +284,25 @@ impl AppearanceEditorWindow {
             &document,
             "可见范围",
             &["始终", "仅当前应用"],
+            FIELD_W,
             &mut y,
             tg,
             objc2::sel!(scopeModeChanged:),
         );
         let (scope_bundle_label, scope_bundle, scope_pick_btn) =
-            scope_bundle_row(mtm, &document, &mut y, tg);
+            scope_bundle_row(mtm, &document, FIELD_W, &mut y, tg);
         let (scope_app_label, scope_app) =
             labeled_pair(mtm, &document, "Scope 应用名", FIELD_W, &mut y);
 
         let content_h = y + CONTENT_PAD;
+        let fitted_h = content_h + BTN_EDITOR_FOOTER_H;
+        unsafe {
+            window.setContentSize(NSSize::new(APPEARANCE_DEFAULT_W, fitted_h));
+            window.setContentMinSize(NSSize::new(
+                APPEARANCE_MIN_W,
+                APPEARANCE_MIN_H.min(fitted_h),
+            ));
+        }
 
         set_appearance_editor_live_layout(Some(AppearanceEditorLiveLayout {
             window: window.clone(),
