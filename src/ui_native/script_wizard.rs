@@ -10,6 +10,8 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{MainThreadMarker, NSArray, NSPoint, NSRect, NSSize, NSString, NSURL};
 
+use crate::config::FlowProgram;
+
 static HOTKEY_CAPTURE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
 /// 打开应用预设：浏览 .app 或点选窗口。
@@ -145,6 +147,38 @@ pub fn prompt_url(mtm: MainThreadMarker) -> Option<String> {
     } else {
         Some(format!("https://{raw}"))
     }
+}
+
+/// 等待毫秒数；默认 200；支持末尾 `ms`；非法或超上限时提示并取消。
+pub fn prompt_wait_ms(mtm: MainThreadMarker) -> Option<u64> {
+    let raw = prompt_singleline(
+        mtm,
+        "等待",
+        &format!(
+            "输入等待时间（毫秒），范围 0–{}。确定后插入「等待 …」行。",
+            FlowProgram::MAX_WAIT_MS
+        ),
+        "200",
+    )?;
+    let t = raw.trim().to_lowercase();
+    let t = t.strip_suffix("ms").unwrap_or(&t).trim();
+    if let Ok(ms) = t.parse::<u64>() {
+        if ms <= FlowProgram::MAX_WAIT_MS {
+            return Some(ms);
+        }
+    }
+    let alert = NSAlert::new(mtm);
+    unsafe {
+        alert.setAlertStyle(NSAlertStyle::Warning);
+        alert.setMessageText(&NSString::from_str("无效的等待时间"));
+        alert.setInformativeText(&NSString::from_str(&format!(
+            "请输入 0–{} 之间的整数（可带 ms 后缀）。",
+            FlowProgram::MAX_WAIT_MS
+        )));
+        alert.addButtonWithTitle(&NSString::from_str("确定"));
+        alert.runModal();
+    }
+    None
 }
 
 /// Shell 命令（多行）。

@@ -42,8 +42,8 @@ use super::script_editor_toolbar::{install_toolbar_strip, SCRIPT_TOOLBAR_H};
 use super::script_wizard::{
     pick_app_path, pick_open_file_path, pick_script_export_path, pick_script_import,
     prompt_flow_insert_choice, prompt_hotkey, prompt_open_app_choice, prompt_script_import_choice,
-    prompt_shell, prompt_text, prompt_url, show_syntax_help, write_script_file, FlowInsertChoice,
-    OpenAppChoice,
+    prompt_shell, prompt_text, prompt_url, prompt_wait_ms, show_syntax_help, write_script_file,
+    FlowInsertChoice, OpenAppChoice,
 };
 
 #[derive(Default)]
@@ -852,6 +852,18 @@ impl ScriptEditorWindow {
                         preset.template,
                         &PresetBuildParams {
                             text: Some(text),
+                            ..Default::default()
+                        },
+                    );
+                    self.insert_script_fragment(&fragment, false);
+                }
+            }
+            PresetParamKind::WaitMs => {
+                if let Some(ms) = prompt_wait_ms(self.mtm) {
+                    let fragment = render_template(
+                        preset.template,
+                        &PresetBuildParams {
+                            ms: Some(ms.to_string()),
                             ..Default::default()
                         },
                     );

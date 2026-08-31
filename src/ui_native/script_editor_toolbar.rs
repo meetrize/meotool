@@ -33,6 +33,7 @@ fn sf_symbol_for_preset(id: &str) -> &'static str {
         "open_file" => "doc",
         "paste" => "doc.on.clipboard",
         "shell" => "terminal",
+        "wait" => "timer",
         "click_once" => "hand.point.up.left",
         "record_clicks" => "record.circle",
         "type_enter" => "return",

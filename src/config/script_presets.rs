@@ -7,6 +7,8 @@ pub enum PresetParamKind {
     FlowWizard,
     HotkeyCapture,
     Text { multiline: bool },
+    /// 等待毫秒数（弹窗输入，默认见预设）。
+    WaitMs,
     Url,
     ShellCommand,
     OpenFilePanel,
@@ -27,7 +29,7 @@ pub struct ScriptPreset {
     pub label: &'static str,
     pub tooltip: &'static str,
     pub param: PresetParamKind,
-    /// 静态 MeoFlow 片段；`{hotkey}` `{text}` `{url}` `{path}` `{app}` `{x}` `{y}` 为占位符。
+    /// 静态 MeoFlow 片段；`{hotkey}` `{text}` `{url}` `{path}` `{app}` `{x}` `{y}` `{ms}` 为占位符。
     pub template: &'static str,
     #[allow(dead_code)]
     pub group: PresetGroup,
@@ -83,6 +85,14 @@ pub const QUICK_PRESETS: &[ScriptPreset] = &[
         tooltip: "运行一条 Shell 命令（与旧「执行命令」相同权限）。",
         param: PresetParamKind::ShellCommand,
         template: "执行命令 \"{text}\"\n",
+        group: PresetGroup::Quick,
+    },
+    ScriptPreset {
+        id: "wait",
+        label: "等待",
+        tooltip: "插入「等待 …」毫秒；弹窗可改时长，默认 200。",
+        param: PresetParamKind::WaitMs,
+        template: "等待 {ms}\n",
         group: PresetGroup::Quick,
     },
     ScriptPreset {
@@ -185,6 +195,9 @@ pub fn render_template(template: &str, params: &PresetBuildParams) -> String {
     if let Some(v) = &params.y {
         out = out.replace("{y}", v);
     }
+    if let Some(v) = &params.ms {
+        out = out.replace("{ms}", v);
+    }
     out
 }
 
@@ -197,6 +210,7 @@ pub struct PresetBuildParams {
     pub app: Option<String>,
     pub x: Option<String>,
     pub y: Option<String>,
+    pub ms: Option<String>,
 }
 
 /// 脚本是否仅含注释与空白（视为未配置）。

@@ -63,6 +63,11 @@ enum PresetWizard {
         preset: &'static ScriptPreset,
         replace_all: bool,
     },
+    Wait {
+        buf: String,
+        preset: &'static ScriptPreset,
+        replace_all: bool,
+    },
     Path {
         buf: String,
         preset: &'static ScriptPreset,
@@ -449,6 +454,13 @@ impl ActionEditorState {
                     replace_all,
                 });
             }
+            PresetParamKind::WaitMs => {
+                self.wizard = Some(PresetWizard::Wait {
+                    buf: "200".into(),
+                    preset,
+                    replace_all,
+                });
+            }
             PresetParamKind::ClickCapture => {
                 *request = Some(MacroEditorRequest::ScriptCaptureClick);
             }
@@ -483,6 +495,7 @@ impl ActionEditorState {
                     PresetWizard::Text { title, .. } => title.as_str(),
                     PresetWizard::Url { .. } => "打开链接",
                     PresetWizard::Shell { .. } => "执行命令",
+                    PresetWizard::Wait { .. } => "等待",
                     PresetWizard::Path { .. } => "打开文件",
                     PresetWizard::App { .. } => "打开应用",
                 };
@@ -607,6 +620,49 @@ impl ActionEditorState {
                                     }
                                 });
                                 if let Some(PresetWizard::Shell { buf: ref mut b, .. }) =
+                                    self.wizard.as_mut()
+                                {
+                                    *b = buf;
+                                }
+                            }
+                            PresetWizard::Wait {
+                                mut buf,
+                                preset,
+                                replace_all,
+                            } => {
+                                ui.label(format!(
+                                    "等待时间（毫秒），范围 0–{}",
+                                    crate::config::FlowProgram::MAX_WAIT_MS
+                                ));
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut buf)
+                                        .desired_width(120.0)
+                                        .hint_text("200"),
+                                );
+                                ui.horizontal(|ui| {
+                                    if ui.button("确定").clicked() {
+                                        let t = buf.trim().to_lowercase();
+                                        let t = t.strip_suffix("ms").unwrap_or(&t).trim();
+                                        if let Ok(ms) = t.parse::<u64>() {
+                                            if ms <= crate::config::FlowProgram::MAX_WAIT_MS {
+                                                let fragment = render_template(
+                                                    preset.template,
+                                                    &PresetBuildParams {
+                                                        ms: Some(ms.to_string()),
+                                                        ..Default::default()
+                                                    },
+                                                );
+                                                insert_from_wizard =
+                                                    Some((fragment, replace_all));
+                                                close_wizard = true;
+                                            }
+                                        }
+                                    }
+                                    if ui.button("取消").clicked() {
+                                        close_wizard = true;
+                                    }
+                                });
+                                if let Some(PresetWizard::Wait { buf: ref mut b, .. }) =
                                     self.wizard.as_mut()
                                 {
                                     *b = buf;
