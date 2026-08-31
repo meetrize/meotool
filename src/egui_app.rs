@@ -197,6 +197,8 @@ struct MeoToolApp {
     window_watch: std::sync::Arc<WindowWatcherControl>,
     /// 设置变更防抖写盘
     pending_settings_save: Option<Instant>,
+    /// 手势会话未钉住：鼠标离开后到期隐藏
+    gesture_leave_hide_after: Option<Instant>,
 }
 
 impl MeoToolApp {
@@ -251,6 +253,7 @@ impl MeoToolApp {
             hidden_since: None,
             window_watch,
             pending_settings_save: None,
+            gesture_leave_hide_after: None,
         }
     }
 
@@ -1104,9 +1107,6 @@ impl MeoToolApp {
     }
 
     fn trigger_panel_button(&mut self, ctx: &egui::Context, index: usize) {
-        let hide_after = self.state.gesture_session
-            && !self.state.pinned
-            && self.state.app_config.gesture.hide_after_button;
         let is_mouse_macro = self
             .state
             .display_buttons()
@@ -1116,16 +1116,68 @@ impl MeoToolApp {
         let hide_before = is_mouse_macro && self.state.visible;
         let was_pinned = self.state.pinned;
         if hide_before {
+            self.gesture_leave_hide_after = None;
             self.hide_main_panel(ctx);
         }
-        let ok = self.state.trigger_button(index, &self.theme);
-        if ok && hide_after && !hide_before {
-            self.hide_main_panel(ctx);
-        }
+        let _ok = self.state.trigger_button(index, &self.theme);
+        // 未钉住手势会话：点按后不立刻收起，等鼠标离开面板再藏
         // 置顶模式下宏回放后恢复显示
         if hide_before && was_pinned {
             self.state.pinned = true;
             self.show_main_panel(ctx);
+        }
+    }
+
+    fn update_gesture_leave_hide(&mut self, ctx: &egui::Context) {
+        let should = self.state.gesture_session
+            && self.state.visible
+            && !self.state.pinned
+            && self.state.app_config.gesture.hide_after_button;
+        if !should {
+            self.gesture_leave_hide_after = None;
+            return;
+        }
+        let over = ctx.input(|i| {
+            let Some(pos) = i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()) else {
+                // 无指针信息时用全局坐标 + outer_rect
+                return None;
+            };
+            Some(
+                i.viewport()
+                    .outer_rect
+                    .is_some_and(|r| r.contains(pos)),
+            )
+        });
+        let over = match over {
+            Some(v) => v,
+            None => {
+                let Some((mx, my)) = crate::platform::global_mouse_pos() else {
+                    return;
+                };
+                ctx.input(|i| {
+                    i.viewport()
+                        .outer_rect
+                        .is_some_and(|r| r.contains(egui::pos2(mx, my)))
+                })
+            }
+        };
+        if over {
+            self.gesture_leave_hide_after = None;
+            return;
+        }
+        const DELAY: std::time::Duration = std::time::Duration::from_millis(280);
+        match self.gesture_leave_hide_after {
+            None => {
+                self.gesture_leave_hide_after = Some(Instant::now() + DELAY);
+                ctx.request_repaint_after(DELAY);
+            }
+            Some(deadline) if Instant::now() >= deadline => {
+                self.gesture_leave_hide_after = None;
+                self.hide_main_panel(ctx);
+            }
+            Some(deadline) => {
+                ctx.request_repaint_after(deadline.saturating_duration_since(Instant::now()));
+            }
         }
     }
 
@@ -1184,6 +1236,7 @@ impl MeoToolApp {
             match action {
                 MouseGestureAction::ShowAt { x, y } => {
                     let anchor = egui::pos2(x, y);
+                    self.gesture_leave_hide_after = None;
                     self.state.show_at_gesture(anchor);
                     self.apply_panel_shown_viewport(ctx);
                 }
@@ -1196,6 +1249,7 @@ impl MeoToolApp {
                         .input(|i| i.viewport().outer_rect)
                         .is_none_or(|rect| !rect.contains(click));
                     if outside && !self.state.pinned {
+                        self.gesture_leave_hide_after = None;
                         self.hide_main_panel(ctx);
                     }
                 }
@@ -1224,6 +1278,7 @@ impl eframe::App for MeoToolApp {
         self.poll_hotkeys(ctx);
         self.poll_tray(ctx);
         self.poll_mouse_gesture(ctx);
+        self.update_gesture_leave_hide(ctx);
         self.poll_macro_recorder(ctx);
 
         self.handle_settings(ctx);

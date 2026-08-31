@@ -1623,7 +1623,7 @@ fn append_gesture_section(
     add_arranged(page, &thr_row);
 
     let (r3, dismiss_outside) = labeled_switch(mtm, "点击面板外收起");
-    let (r4, hide_after) = labeled_switch(mtm, "点击按钮后收起");
+    let (r4, hide_after) = labeled_switch(mtm, "鼠标移出后收起");
     add_arranged(page, &r3);
     add_arranged(page, &r4);
 

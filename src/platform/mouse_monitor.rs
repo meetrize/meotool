@@ -144,7 +144,6 @@ impl MouseGestureMonitor {
         self.shared.dismiss_armed.store(armed, Ordering::Relaxed);
     }
 
-    #[cfg(any(feature = "ui-egui", test))]
     pub fn set_ignore_rect(&mut self, rect: Option<[f32; 4]>) {
         #[cfg(target_os = "macos")]
         {

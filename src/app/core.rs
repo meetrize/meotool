@@ -161,13 +161,10 @@ impl AppCore {
                 CoreEffect::RefreshPanel
             }
             CoreCommand::TriggerButton(index) => {
+                // 未钉住手势会话：不在此处立刻收起，由 UI 在鼠标离开面板后再隐藏，
+                // 避免点按瞬间藏窗导致按钮动作丢失。
                 self.trigger_button(index);
-                if self.should_hide_after_button() {
-                    self.hide_panel();
-                    CoreEffect::VisibilityChanged
-                } else {
-                    CoreEffect::None
-                }
+                CoreEffect::None
             }
             CoreCommand::ReloadConfig => {
                 self.reload_config();
@@ -216,7 +213,8 @@ impl AppCore {
         self.gesture_session = true;
     }
 
-    fn should_hide_after_button(&self) -> bool {
+    /// 未钉住的手势会话：鼠标离开面板后应自动收起（对应设置「鼠标移出后收起」）。
+    pub fn should_hide_when_pointer_leaves(&self) -> bool {
         self.gesture_session
             && self.visible
             && !self.pinned

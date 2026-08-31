@@ -468,7 +468,7 @@ impl SettingsEditor {
                 );
             });
             ui.checkbox(&mut gesture.dismiss_on_outside_click, "点击面板外自动收起");
-            ui.checkbox(&mut gesture.hide_after_button, "点击按钮后自动收起");
+            ui.checkbox(&mut gesture.hide_after_button, "鼠标移出后自动收起");
         });
         if gesture.global_priority {
             ui.label(

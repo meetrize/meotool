@@ -430,6 +430,27 @@ impl NativePanel {
         self.pointer_over_local_rect(mtm, self.content_local, mx, my)
     }
 
+    /// 整窗命中区 `[min_x, min_y, max_x, max_y]`（左上原点，与 `global_mouse_pos` / 手势坐标一致）。
+    pub fn panel_hit_rect(&self, mtm: MainThreadMarker) -> Option<[f32; 4]> {
+        let frame = unsafe { self.panel.frame() };
+        let screen_h = cocoa_screen_height(mtm, &self.panel);
+        let left = frame.origin.x;
+        let bottom = frame.origin.y;
+        let right = left + frame.size.width;
+        let top = bottom + frame.size.height;
+        let y_top = screen_h - top;
+        let y_bottom = screen_h - bottom;
+        Some([left as f32, y_top as f32, right as f32, y_bottom as f32])
+    }
+
+    /// 指针是否在面板窗口上（完整 / 折叠模式通用）。
+    pub fn pointer_over_panel(&self, mtm: MainThreadMarker, mx: f32, my: f32) -> bool {
+        let Some([min_x, min_y, max_x, max_y]) = self.panel_hit_rect(mtm) else {
+            return false;
+        };
+        mx >= min_x && mx < max_x && my >= min_y && my < max_y
+    }
+
     fn pointer_over_local_rect(
         &self,
         mtm: MainThreadMarker,

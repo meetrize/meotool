@@ -47,6 +47,8 @@ use super::permissions::PermissionsWindow;
 use super::settings::SettingsWindow;
 
 const COLLAPSE_DELAY: Duration = Duration::from_millis(500);
+/// 未钉住手势面板：鼠标离开后延迟再藏，避免划过空隙误收
+const GESTURE_LEAVE_HIDE_DELAY: Duration = Duration::from_millis(280);
 const LAUNCHER_DRAG_THRESHOLD: f32 = 4.0;
 const POSITION_SAVE_DEBOUNCE: Duration = Duration::from_millis(300);
 const SETTINGS_SAVE_DEBOUNCE: Duration = Duration::from_millis(400);
@@ -115,6 +117,8 @@ struct NativeState {
     last_settings_self_write: Option<Instant>,
     /// 动作脚本「捕获点击」
     script_click_recorder: Option<MacroRecorder>,
+    /// 手势会话未钉住：鼠标离开面板后到期则隐藏
+    gesture_leave_hide_after: Option<Instant>,
 }
 
 enum TickOutcome {
@@ -145,6 +149,7 @@ impl NativeState {
         self.poll_ui_events();
         self.maybe_prompt_permissions();
         self.update_collapsed_hover();
+        self.update_gesture_leave_hide();
         self.sync_panel_if_needed();
         self.flush_pending_position_save(false);
         self.flush_pending_settings_save(false);
@@ -1129,22 +1134,71 @@ impl NativeState {
             return;
         }
         monitor.update_config(&self.core.app_config.gesture);
-        monitor.set_dismiss_armed(
-            self.core.visible && self.core.gesture_session && !self.core.pinned,
-        );
+        let dismiss_ok = self.core.visible
+            && self.core.gesture_session
+            && !self.core.pinned
+            && self.core.app_config.gesture.dismiss_on_outside_click;
+        monitor.set_dismiss_armed(dismiss_ok);
+        let ignore = if self.core.visible {
+            self.panel.panel_hit_rect(self.mtm)
+        } else {
+            None
+        };
+        monitor.set_ignore_rect(ignore);
         for action in monitor.poll() {
             match action {
                 MouseGestureAction::ShowAt { x, y } => {
+                    self.gesture_leave_hide_after = None;
                     let effect = self.core.handle(CoreCommand::ShowPanelAt { x, y });
                     self.apply(effect);
                 }
-                MouseGestureAction::LeftMouseDown { .. } => {
-                    if self.core.gesture_session && self.core.visible && !self.core.pinned {
-                        let effect = self.core.handle(CoreCommand::HidePanel);
-                        self.apply(effect);
+                MouseGestureAction::LeftMouseDown { x, y } => {
+                    if !self.core.gesture_session || !self.core.visible || self.core.pinned {
+                        continue;
                     }
+                    if !self.core.app_config.gesture.dismiss_on_outside_click {
+                        continue;
+                    }
+                    // 点在面板上：留给按钮处理，不收起
+                    if self.panel.pointer_over_panel(self.mtm, x, y) {
+                        continue;
+                    }
+                    self.gesture_leave_hide_after = None;
+                    let effect = self.core.handle(CoreCommand::HidePanel);
+                    self.apply(effect);
                 }
             }
+        }
+    }
+
+    /// 未钉住手势会话：鼠标仍在面板上则保持；移出后再延迟自动隐藏。
+    fn update_gesture_leave_hide(&mut self) {
+        if !self.core.should_hide_when_pointer_leaves() {
+            self.gesture_leave_hide_after = None;
+            return;
+        }
+        // 折叠拖动中不要因离开判定收起
+        if self.collapsed_ui.drag.is_some() {
+            self.gesture_leave_hide_after = None;
+            return;
+        }
+        let Some((mx, my)) = global_mouse_pos() else {
+            return;
+        };
+        if self.panel.pointer_over_panel(self.mtm, mx, my) {
+            self.gesture_leave_hide_after = None;
+            return;
+        }
+        match self.gesture_leave_hide_after {
+            None => {
+                self.gesture_leave_hide_after = Some(Instant::now() + GESTURE_LEAVE_HIDE_DELAY);
+            }
+            Some(deadline) if Instant::now() >= deadline => {
+                self.gesture_leave_hide_after = None;
+                let effect = self.core.handle(CoreCommand::HidePanel);
+                self.apply(effect);
+            }
+            Some(_) => {}
         }
     }
 
@@ -1399,6 +1453,7 @@ pub fn run_native() -> Result<(), String> {
         pending_settings_save: None,
         last_settings_self_write: None,
         script_click_recorder: None,
+        gesture_leave_hide_after: None,
     };
     state.sync_panel_if_needed();
     STATE.with(|slot| *slot.borrow_mut() = Some(state));
