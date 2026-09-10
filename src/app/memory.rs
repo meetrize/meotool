@@ -11,10 +11,15 @@ pub const FONT_ATLAS_RESET_RATIO: f32 = 0.45;
 pub const FONT_RESET_MIN_INTERVAL: Duration = Duration::from_secs(2 * 60);
 #[cfg(feature = "ui-egui")]
 pub const HIDDEN_FONT_RESET_AFTER: Duration = Duration::from_secs(90);
-/// 面板隐藏超过此时长后尝试归还堆内存给 OS
+/// 面板隐藏 / 折叠稳态超过此时长后尝试归还堆内存给 OS
 pub const HIDDEN_IDLE_PURGE_AFTER: Duration = Duration::from_secs(90);
 /// 两次 purge 之间的最小间隔
-pub const PURGE_MIN_INTERVAL: Duration = Duration::from_secs(30 * 60);
+pub const PURGE_MIN_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
+/// 无用户活动超过此时长后才降频 tick
+pub const TICK_SLOW_AFTER: Duration = Duration::from_secs(5);
+/// 热键 / 手势 / tray 唤醒后保持快 tick 的时长
+pub const TICK_FAST_BURST: Duration = Duration::from_secs(3);
 
 /// 原生 UI 路径的运行时计数（累计值，用于长跑泄漏定位）。
 #[derive(Debug, Default, Clone, Copy)]

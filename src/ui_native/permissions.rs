@@ -192,6 +192,10 @@ impl PermissionsWindow {
         super::activation::dismiss_utility_window(self.mtm, &self.window, &mut self.front_held);
     }
 
+    pub fn is_visible(&self) -> bool {
+        unsafe { self.window.isVisible() }
+    }
+
     pub fn poll(&mut self) {
         while let Ok(a) = self.action_rx.try_recv() {
             match a {

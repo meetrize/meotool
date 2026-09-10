@@ -131,9 +131,12 @@ cargo build --release
 | 触发 | 动作 |
 |------|------|
 | 面板隐藏 | 立即 `clear_icon_cache()` |
-| 隐藏 > **90s** | `mi_collect(true)` 归还 mimalloc 空闲页（每 30min 最多一次） |
+| 隐藏或**折叠收起稳态** > **90s** | 清图标缓存（每轮 idle 一次）+ `mi_collect(true)`（每 15min 最多一次） |
+| 无交互 >5s | 固定 50ms timer，折叠稳态每 4 拍、隐藏每 20 拍才跑全量 poll；悬停探测仍每拍。热键/手势/tray `poke` 立即满速 |
 
-日志：`idle memory purge (panel hidden Ns)`
+日志：`idle icon cache cleared (…)`, `idle memory purge (…)`
+
+手势 `CGEventTap` 长闲置时**不**停用（否则无法用手势唤醒）。
 
 ---
 

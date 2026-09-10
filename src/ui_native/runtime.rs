@@ -17,7 +17,7 @@ use objc2_app_kit::{
 use objc2_foundation::{MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSTimer};
 
 use crate::app::{
-    memory::{self, HIDDEN_IDLE_PURGE_AFTER, PURGE_MIN_INTERVAL},
+    memory::{self, HIDDEN_IDLE_PURGE_AFTER, PURGE_MIN_INTERVAL, TICK_FAST_BURST, TICK_SLOW_AFTER},
     AppCore, CoreCommand, CoreEffect, MemoryMonitor, WakeHandle,
 };
 use crate::action::{simplify_capture_once, simplify_events};
@@ -54,6 +54,35 @@ const POSITION_SAVE_DEBOUNCE: Duration = Duration::from_millis(300);
 const SETTINGS_SAVE_DEBOUNCE: Duration = Duration::from_millis(400);
 /// 忽略本进程写盘后 watcher 回弹的时间窗
 const SELF_WRITE_IGNORE: Duration = Duration::from_millis(500);
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum MemoryIdleKind {
+    /// 面板 orderOut 隐藏
+    Hidden,
+    /// 折叠桌宠收起且无叠加 UI
+    CollapsedSteady,
+}
+
+/// 固定 NSTimer 间隔，用跳过次数实现空闲降频（避免在回调里 invalidate 当前 timer）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TickPace {
+    Fast,
+    CollapsedIdle,
+    HiddenIdle,
+}
+
+impl TickPace {
+    fn skip_mask(self) -> u32 {
+        match self {
+            // 50ms
+            Self::Fast => 1,
+            // ~200ms
+            Self::CollapsedIdle => 4,
+            // ~1s
+            Self::HiddenIdle => 20,
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 struct LauncherDrag {
@@ -107,7 +136,15 @@ struct NativeState {
     /// 面板需要与 AppCore 同步（配置/显隐/折叠展开等）
     panel_sync_dirty: bool,
     panel_hidden_since: Option<Instant>,
+    /// 进入内存 idle（隐藏或折叠稳态）的起点
+    memory_idle_since: Option<Instant>,
+    /// 本轮 idle 是否已清过图标缓存
+    idle_icons_cleared: bool,
     last_idle_purge: Instant,
+    /// 最近一次用户/系统交互（用于 tick 降频）
+    last_activity: Instant,
+    /// 固定 50ms timer 的序号，配合 TickPace 跳过实现降频
+    tick_seq: u32,
     window_watch: std::sync::Arc<WindowWatcherControl>,
     /// 完整面板拖动结束后 debounce 写盘
     pending_position_save: Option<Instant>,
@@ -129,6 +166,15 @@ enum TickOutcome {
 impl NativeState {
     fn tick(&mut self) -> TickOutcome {
         if self.terminating {
+            return TickOutcome::Continue;
+        }
+        self.tick_seq = self.tick_seq.wrapping_add(1);
+        let pace = self.desired_tick_pace();
+        let mask = pace.skip_mask();
+        // 折叠稳态降频时仍每拍探测悬停，避免展开迟滞；其它工作按 mask 跳过
+        if mask > 1 && (self.tick_seq % mask) != 0 {
+            self.update_collapsed_hover();
+            self.sync_panel_if_needed();
             return TickOutcome::Continue;
         }
         self.poll_hotkeys();
@@ -176,7 +222,12 @@ impl NativeState {
     fn apply(&mut self, effect: CoreEffect) {
         match effect {
             CoreEffect::None => {}
-            CoreEffect::RefreshPanel | CoreEffect::VisibilityChanged => {
+            CoreEffect::RefreshPanel => {
+                self.mark_panel_dirty();
+                self.sync_panel_if_needed();
+            }
+            CoreEffect::VisibilityChanged => {
+                self.mark_activity();
                 self.mark_panel_dirty();
                 self.sync_panel_if_needed();
             }
@@ -184,8 +235,12 @@ impl NativeState {
                 self.core.quit_requested = true;
             }
             CoreEffect::OpenSettingsUi => self.open_settings(),
-            CoreEffect::OpenPermissionsUi => self.permissions.show(),
+            CoreEffect::OpenPermissionsUi => {
+                self.mark_activity();
+                self.permissions.show();
+            }
             CoreEffect::OpenButtonEditor { profile, button } => {
+                self.mark_activity();
                 self.open_button_editor(profile, button, true);
             }
         }
@@ -193,6 +248,7 @@ impl NativeState {
 
     fn open_settings(&mut self) {
         // 保持面板可见，便于外观即时预览；设置窗使用 Normal 窗级
+        self.mark_activity();
         let cfg = self.core.app_config.clone();
         self.settings.reload_from_config(&cfg);
         self.settings.show();
@@ -576,6 +632,7 @@ impl NativeState {
             self.panel_hidden_since = None;
         } else if was_visible != Some(false) {
             self.panel.clear_icon_cache();
+            self.idle_icons_cleared = true;
             self.panel_hidden_since = Some(Instant::now());
         } else {
             self.track_panel_hidden();
@@ -589,22 +646,103 @@ impl NativeState {
         }
     }
 
-    fn maybe_idle_memory_purge(&mut self) {
-        if self.core.visible {
-            return;
+    fn mark_activity(&mut self) {
+        self.last_activity = Instant::now();
+        // 立刻跑满下一拍，避免降频时悬停/热键要等完整 skip 周期
+        self.tick_seq = 0;
+    }
+
+    /// 叠加窗 / 录制 / 展开 / 拖动等：不算「空闲」。
+    fn has_active_overlay(&self) -> bool {
+        self.settings.is_visible()
+            || self.script_editor.is_visible()
+            || self.appearance_editor.is_visible()
+            || self.icon_picker.is_open()
+            || self.permissions.is_visible()
+            || self.script_click_recorder.is_some()
+            || self.app_picker.as_ref().is_some_and(|p| p.is_picking())
+            || self.collapsed_ui.drag.is_some()
+            || self.collapsed_ui.expanded
+            || (self.core.gesture_session && self.core.visible)
+    }
+
+    fn memory_idle_kind(&self) -> Option<MemoryIdleKind> {
+        if self.has_active_overlay() {
+            return None;
         }
-        let Some(hidden_since) = self.panel_hidden_since else {
+        if !self.core.visible {
+            return Some(MemoryIdleKind::Hidden);
+        }
+        if self.core.is_collapsed_mode() && !self.collapsed_ui.expanded {
+            return Some(MemoryIdleKind::CollapsedSteady);
+        }
+        None
+    }
+
+    fn maybe_idle_memory_purge(&mut self) {
+        let Some(kind) = self.memory_idle_kind() else {
+            if self.memory_idle_since.is_some() || self.idle_icons_cleared {
+                self.memory_idle_since = None;
+                self.idle_icons_cleared = false;
+                self.window_watch.set_relaxed(false);
+            }
             return;
         };
-        if hidden_since.elapsed() < HIDDEN_IDLE_PURGE_AFTER {
+
+        let idle_since = match self.memory_idle_since {
+            Some(t) => t,
+            None => {
+                let now = Instant::now();
+                self.memory_idle_since = Some(now);
+                now
+            }
+        };
+
+        // 折叠稳态：窗口轮询与隐藏同档，减少无交互时的脚本开销
+        self.window_watch
+            .set_relaxed(matches!(kind, MemoryIdleKind::CollapsedSteady));
+
+        if idle_since.elapsed() < HIDDEN_IDLE_PURGE_AFTER {
             return;
         }
+
+        if !self.idle_icons_cleared {
+            self.panel.clear_icon_cache();
+            self.idle_icons_cleared = true;
+            log::info!(
+                "idle icon cache cleared ({:?}, {:.0}s)",
+                kind,
+                idle_since.elapsed().as_secs_f64()
+            );
+        }
+
         if self.last_idle_purge.elapsed() < PURGE_MIN_INTERVAL {
             return;
         }
         self.last_idle_purge = Instant::now();
         memory::purge_allocator();
-        log::info!("idle memory purge (panel hidden {:.0}s)", hidden_since.elapsed().as_secs_f64());
+        log::info!(
+            "idle memory purge ({:?}, {:.0}s)",
+            kind,
+            idle_since.elapsed().as_secs_f64()
+        );
+    }
+
+    fn desired_tick_pace(&self) -> TickPace {
+        if self.last_activity.elapsed() < TICK_FAST_BURST {
+            return TickPace::Fast;
+        }
+        if self.has_active_overlay() {
+            return TickPace::Fast;
+        }
+        if self.last_activity.elapsed() < TICK_SLOW_AFTER {
+            return TickPace::Fast;
+        }
+        match self.memory_idle_kind() {
+            Some(MemoryIdleKind::Hidden) => TickPace::HiddenIdle,
+            Some(MemoryIdleKind::CollapsedSteady) => TickPace::CollapsedIdle,
+            None => TickPace::Fast,
+        }
     }
 
     #[allow(dead_code)]
@@ -662,6 +800,7 @@ impl NativeState {
                 origin_y: oy,
                 moved: false,
             });
+            self.mark_activity();
             self.start_launcher_drag_monitors();
             self.collapsed_ui.left_was_down = true;
             self.panel.set_ignores_mouse_events(false);
@@ -703,6 +842,7 @@ impl NativeState {
         self.panel.set_ignores_mouse_events(passthrough);
 
         if self.collapsed_ui.expanded != was_expanded {
+            self.mark_activity();
             self.mark_panel_dirty();
         }
     }
@@ -1088,6 +1228,7 @@ impl NativeState {
 
     fn poll_hotkeys(&mut self) {
         while let Some(action) = self.hotkeys.poll() {
+            self.mark_activity();
             let cmd = match action {
                 HotkeyAction::ToggleVisibility => CoreCommand::ToggleVisibility,
                 HotkeyAction::ReloadConfig => CoreCommand::ReloadConfig,
@@ -1112,6 +1253,7 @@ impl NativeState {
             out
         };
         for action in actions {
+            self.mark_activity();
             let cmd = match action {
                 TrayAction::TogglePanel => CoreCommand::ToggleVisibility,
                 TrayAction::OpenSettings => CoreCommand::OpenSettings,
@@ -1149,6 +1291,7 @@ impl NativeState {
         for action in monitor.poll() {
             match action {
                 MouseGestureAction::ShowAt { x, y } => {
+                    self.mark_activity();
                     self.gesture_leave_hide_after = None;
                     let effect = self.core.handle(CoreCommand::ShowPanelAt { x, y });
                     self.apply(effect);
@@ -1164,6 +1307,7 @@ impl NativeState {
                     if self.panel.pointer_over_panel(self.mtm, x, y) {
                         continue;
                     }
+                    self.mark_activity();
                     self.gesture_leave_hide_after = None;
                     let effect = self.core.handle(CoreCommand::HidePanel);
                     self.apply(effect);
@@ -1205,6 +1349,7 @@ impl NativeState {
 
     fn poll_button_clicks(&mut self) {
         for index in drain_button_clicks(self.panel.click_receiver()) {
+            self.mark_activity();
             let effect = self.core.handle(CoreCommand::TriggerButton(index));
             // 折叠模式：点完按钮只收起网格，猫头继续留在桌面（钉住时尤其如此）
             if self.core.is_collapsed_mode() && self.core.visible {
@@ -1370,6 +1515,13 @@ pub fn run_native() -> Result<(), String> {
     let wake = WakeHandle::new();
     wake.set_callback(|| {
         dispatch::Queue::main().exec_async(|| {
+            STATE.with(|slot| {
+                if let Ok(mut guard) = slot.try_borrow_mut() {
+                    if let Some(state) = guard.as_mut() {
+                        state.mark_activity();
+                    }
+                }
+            });
             if matches!(run_tick(), TickOutcome::Quit) {
                 let mtm = MainThreadMarker::new().expect("main thread");
                 unsafe {
@@ -1448,7 +1600,11 @@ pub fn run_native() -> Result<(), String> {
         memory: MemoryMonitor::default(),
         panel_sync_dirty: true,
         panel_hidden_since: None,
+        memory_idle_since: None,
+        idle_icons_cleared: false,
         last_idle_purge: Instant::now(),
+        last_activity: Instant::now(),
+        tick_seq: 0,
         window_watch,
         pending_position_save: None,
         pending_settings_save: None,

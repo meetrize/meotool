@@ -14,9 +14,11 @@ const HIDDEN_POLL_MIN_MS: u64 = 800;
 /// 面板隐藏时间隔 = 可见间隔 × 此倍率（不低于下限）
 const HIDDEN_POLL_FACTOR: u64 = 4;
 
-/// 前台窗口 watcher 的轮询节奏（可见 / 隐藏不同间隔）。
+/// 前台窗口 watcher 的轮询节奏（可见 / 隐藏 / 折叠空闲不同间隔）。
 pub struct WindowWatcherControl {
     panel_visible: AtomicBool,
+    /// 折叠收起且无交互：与隐藏同档降频，降低 osascript 压力
+    relaxed: AtomicBool,
     visible_interval_ms: u64,
     hidden_interval_ms: u64,
 }
@@ -29,6 +31,7 @@ impl WindowWatcherControl {
             .max(HIDDEN_POLL_MIN_MS);
         Arc::new(Self {
             panel_visible: AtomicBool::new(false),
+            relaxed: AtomicBool::new(false),
             visible_interval_ms,
             hidden_interval_ms,
         })
@@ -38,8 +41,14 @@ impl WindowWatcherControl {
         self.panel_visible.store(visible, Ordering::Relaxed);
     }
 
+    pub fn set_relaxed(&self, relaxed: bool) {
+        self.relaxed.store(relaxed, Ordering::Relaxed);
+    }
+
     pub fn sleep_interval(&self) -> Duration {
-        let ms = if self.panel_visible.load(Ordering::Relaxed) {
+        let visible = self.panel_visible.load(Ordering::Relaxed);
+        let relaxed = self.relaxed.load(Ordering::Relaxed);
+        let ms = if visible && !relaxed {
             self.visible_interval_ms
         } else {
             self.hidden_interval_ms
@@ -142,5 +151,10 @@ mod tests {
         assert_eq!(ctl.sleep_interval(), Duration::from_millis(200));
         ctl.set_panel_visible(false);
         assert_eq!(ctl.sleep_interval(), Duration::from_millis(800));
+        ctl.set_panel_visible(true);
+        ctl.set_relaxed(true);
+        assert_eq!(ctl.sleep_interval(), Duration::from_millis(800));
+        ctl.set_relaxed(false);
+        assert_eq!(ctl.sleep_interval(), Duration::from_millis(200));
     }
 }

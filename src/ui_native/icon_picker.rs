@@ -226,6 +226,10 @@ impl IconPickerWindow {
         self.target_pick = None;
     }
 
+    pub fn is_open(&self) -> bool {
+        self.target_pick.is_some()
+    }
+
     pub fn poll(&mut self) {
         while let Ok(a) = self.action_rx.try_recv() {
             match a {
