@@ -146,6 +146,7 @@ pub struct ThemeSettingsFile {
     pub button_border_enabled: Option<bool>,
     pub button_border_width: Option<f32>,
     pub button_border_color: Option<String>,
+    pub button_corner_radius: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -429,6 +430,7 @@ impl ThemeSettingsFile {
             button_border_enabled: self.button_border_enabled,
             button_border_width: self.button_border_width,
             button_border_color: self.button_border_color.clone(),
+            button_corner_radius: self.button_corner_radius,
         }
     }
 }

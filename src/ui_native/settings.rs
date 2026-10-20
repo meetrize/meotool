@@ -50,6 +50,8 @@ const GAP_MIN: f64 = 0.0;
 const GAP_MAX: f64 = 32.0;
 const BORDER_W_MIN: f64 = 0.0;
 const BORDER_W_MAX: f64 = 8.0;
+const CORNER_R_MIN: f64 = 0.0;
+const CORNER_R_MAX: f64 = 32.0;
 
 #[derive(Default)]
 struct SettingsTargetIvars;
@@ -285,6 +287,8 @@ struct AppearanceFields {
     btn_border_w: Retained<NSSlider>,
     btn_border_w_label: Retained<NSTextField>,
     btn_border_color: Retained<NSColorWell>,
+    btn_corner_r: Retained<NSSlider>,
+    btn_corner_r_label: Retained<NSTextField>,
     profile_popup: Retained<NSPopUpButton>,
     p_btn_w: Retained<NSTextField>,
     p_btn_h: Retained<NSTextField>,
@@ -997,6 +1001,8 @@ impl SettingsWindow {
         set_field(&self.appearance.gap_y_label, &format!("{gy:.0}"));
         let bbw = slider_border_w(&self.appearance.btn_border_w);
         set_field(&self.appearance.btn_border_w_label, &format!("{bbw:.1}"));
+        let cr = slider_corner_r(&self.appearance.btn_corner_r);
+        set_field(&self.appearance.btn_corner_r_label, &format!("{cr:.0}"));
     }
 
     fn reload_profile_popup(&self) {
@@ -1150,6 +1156,7 @@ impl SettingsWindow {
                     b.setBoxType(NSBoxType::Custom);
                     b.setTitlePosition(objc2_app_kit::NSTitlePosition::NoTitle);
                     b.setFillColor(&bg);
+                    b.setCornerRadius(theme.button_corner_radius.max(0.0) as f64);
                     if theme.button_border_enabled && theme.button_border_width > 0.0 {
                         b.setBorderWidth(theme.button_border_width as f64);
                         b.setBorderColor(&ns_color_from_rgb(theme.button_border_color));
@@ -1512,9 +1519,15 @@ fn build_appearance_page(
     let (r6, btn_border_w, btn_border_w_label) =
         labeled_size_slider(mtm, target, "边框粗细", BORDER_W_MIN, BORDER_W_MAX, "1.0");
     let (btn_border_color_row, btn_border_color) = color_row(mtm, "边框颜色", target);
-    for row in [&r5, &r6, &btn_border_color_row] {
+    let (r_corner, btn_corner_r, btn_corner_r_label) =
+        labeled_size_slider(mtm, target, "按钮圆角", CORNER_R_MIN, CORNER_R_MAX, "8");
+    for row in [&r5, &r6, &btn_border_color_row, &r_corner] {
         add_arranged(&page, row);
     }
+    add_arranged(
+        &page,
+        &help_label(mtm, "圆角为 0 时按钮为直角；拖动滑条可实时预览。"),
+    );
 
     add_arranged(&page, &section_title(mtm, "配置档外观覆盖"));
     let (prof_row, profile_popup) = labeled_popup(mtm, "配置档", &["default"], 220.0);
@@ -1570,6 +1583,8 @@ fn build_appearance_page(
             btn_border_w,
             btn_border_w_label,
             btn_border_color,
+            btn_corner_r,
+            btn_corner_r_label,
             profile_popup,
             p_btn_w,
             p_btn_h,
@@ -1957,6 +1972,11 @@ fn slider_border_w(slider: &NSSlider) -> f32 {
     (v as f32).clamp(BORDER_W_MIN as f32, BORDER_W_MAX as f32)
 }
 
+fn slider_corner_r(slider: &NSSlider) -> f32 {
+    let v = unsafe { slider.doubleValue() }.round() as f32;
+    v.clamp(CORNER_R_MIN as f32, CORNER_R_MAX as f32)
+}
+
 fn color_row(
     mtm: MainThreadMarker,
     label: &str,
@@ -2015,6 +2035,14 @@ fn load_theme_into_wells(fields: &AppearanceFields, theme: &ThemeSettings, _glob
         &fields.btn_border_color,
         theme.button_border_color.as_deref(),
     );
+    unsafe {
+        fields.btn_corner_r.setDoubleValue(
+            theme
+                .button_corner_radius
+                .unwrap_or(8.0)
+                .clamp(CORNER_R_MIN as f32, CORNER_R_MAX as f32) as f64,
+        );
+    }
 }
 
 fn store_theme_from_wells(fields: &AppearanceFields, theme: &mut ThemeSettings, _global: bool) {
@@ -2032,6 +2060,7 @@ fn store_theme_from_wells(fields: &AppearanceFields, theme: &mut ThemeSettings, 
     theme.button_border_enabled = Some(switch_on(&fields.btn_border_on));
     theme.button_border_width = Some(slider_border_w(&fields.btn_border_w));
     theme.button_border_color = Some(well_to_string(&fields.btn_border_color));
+    theme.button_corner_radius = Some(slider_corner_r(&fields.btn_corner_r));
 }
 
 fn set_well_color(well: &NSColorWell, value: Option<&str>) {

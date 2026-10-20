@@ -27,8 +27,7 @@ const TOOLTIP_PADDING: f64 = 8.0;
 use super::events::{decode_menu_tag, emit, encode_menu_tag, ButtonMenuAction, NativeUiEvent};
 use super::icon_cache::NativeIconCache;
 
-/// 与 egui Theme 对齐的圆角与图标边长
-const BUTTON_CORNER_RADIUS: f64 = 8.0;
+/// 图标显示边长（圆角由 ui_style.button_corner_radius 控制）
 const ICON_DISPLAY_SIZE: f64 = 32.0;
 
 static BUTTON_CLICK_TX: OnceLock<Mutex<Option<Sender<usize>>>> = OnceLock::new();
@@ -958,7 +957,8 @@ impl NativePanel {
                 NSPoint::new(pad, 2.0),
                 NSSize::new((vw as f64 - pad * 2.0 - collapse_w).max(40.0), header - 4.0),
             ));
-            label.setTextColor(Some(&NSColor::whiteColor()));
+            // 完整模式左侧标题用灰色，弱化于按钮区
+            label.setTextColor(Some(&NSColor::colorWithWhite_alpha(0.55, 1.0)));
             header_bar.addSubview(&label);
         }
 
@@ -1279,10 +1279,11 @@ fn style_grid_button(
             let _: () = msg_send![&*cell, setShowsStateBy: 0_usize];
         }
 
+        let corner = style.button_corner_radius.max(0.0) as f64;
         button.setWantsLayer(true);
         if let Some(layer) = button.layer() {
             // 部分 CALayer 方法受 crate feature 门控；用 msg_send 保证可用
-            let _: () = msg_send![&*layer, setCornerRadius: BUTTON_CORNER_RADIUS];
+            let _: () = msg_send![&*layer, setCornerRadius: corner];
             let _: () = msg_send![&*layer, setMasksToBounds: true];
             let _: () = msg_send![&*layer, setShadowOpacity: 0.0_f32];
             let _: () = msg_send![&*layer, setShadowRadius: 0.0_f64];
@@ -1433,7 +1434,7 @@ fn fingerprint(panel: &PanelConfig, buttons: &[ButtonConfig], pinned: bool) -> S
     let style = &panel.ui_style;
     let _ = write!(
         &mut s,
-        "{}x{}:{:.0}x{:.0}:{:.0}x{:.0}:{:?}:{:.2}:{}:{}:{}|style:{}:{:.1}:{:?}:{:?}:{:?}:{:?}:{:?}:{:.1}:{}:{:.1}:{:?}",
+        "{}x{}:{:.0}x{:.0}:{:.0}x{:.0}:{:?}:{:.2}:{}:{}:{}|style:{}:{:.1}:{:?}:{:?}:{:?}:{:?}:{:?}:{:.1}:{:.1}:{}:{:.1}:{:?}",
         panel.cols,
         panel.rows,
         panel.button_width,
@@ -1445,7 +1446,7 @@ fn fingerprint(panel: &PanelConfig, buttons: &[ButtonConfig], pinned: bool) -> S
         panel.collapsed,
         pinned,
         buttons.len(),
-        // ui_style：边框/配色变更必须触发重建，否则按钮 layer 仍用旧样式
+        // ui_style：边框/圆角/配色变更必须触发重建，否则按钮 layer 仍用旧样式
         style.button_border_enabled,
         style.button_border_width,
         style.button_border_color,
@@ -1454,6 +1455,7 @@ fn fingerprint(panel: &PanelConfig, buttons: &[ButtonConfig], pinned: bool) -> S
         style.letter_bg,
         style.letter_color,
         style.letter_size,
+        style.button_corner_radius,
         style.window_border_enabled,
         style.window_border_width,
         style.window_border_color,

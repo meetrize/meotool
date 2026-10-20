@@ -54,6 +54,9 @@ fn normalize_theme(theme: &mut ThemeSettings) {
             theme.letter_font = None;
         }
     }
+    if let Some(r) = theme.button_corner_radius.as_mut() {
+        *r = (*r).clamp(0.0, 32.0);
+    }
 }
 
 #[cfg(test)]

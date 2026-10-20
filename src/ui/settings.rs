@@ -1055,6 +1055,15 @@ fn show_theme_settings_editor(ui: &mut egui::Ui, id_prefix: &str, theme: &mut Th
                 &mut theme.button_border_color,
             );
         });
+
+    ui.push_id(format!("{id_prefix}_button_corner_radius"), |ui| {
+        ui.horizontal(|ui| {
+            ui.label("按钮圆角");
+            let radius = theme.button_corner_radius.get_or_insert(8.0);
+            ui.add(egui::Slider::new(radius, 0.0..=32.0).fixed_decimals(0));
+        });
+        ui.label("为 0 时按钮为直角。");
+    });
 }
 
 fn color_field(

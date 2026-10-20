@@ -51,7 +51,7 @@ impl Theme {
             success_flash: Color32::from_rgba_unmultiplied(50, 180, 80, 200),
             error_flash: Color32::from_rgba_unmultiplied(200, 60, 60, 200),
             selection: Color32::from_rgba_unmultiplied(0, 122, 255, 153),
-            corner_radius: 8.0,
+            corner_radius: style.button_corner_radius.max(0.0),
             icon_size: 32.0,
         }
     }

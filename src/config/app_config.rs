@@ -122,6 +122,8 @@ pub struct ThemeSettings {
     pub button_border_enabled: Option<bool>,
     pub button_border_width: Option<f32>,
     pub button_border_color: Option<String>,
+    /// 按钮圆角弧度；0 为直角
+    pub button_corner_radius: Option<f32>,
 }
 
 impl ThemeSettings {
@@ -164,6 +166,9 @@ impl ThemeSettings {
                 .button_border_color
                 .clone()
                 .or_else(|| base.button_border_color.clone()),
+            button_corner_radius: override_
+                .button_corner_radius
+                .or(base.button_corner_radius),
         }
     }
 
@@ -195,6 +200,10 @@ impl ThemeSettings {
                 .unwrap_or(defaults.button_border_width),
             button_border_color: parse_color_opt(self.button_border_color.as_deref())
                 .unwrap_or(defaults.button_border_color),
+            button_corner_radius: self
+                .button_corner_radius
+                .unwrap_or(defaults.button_corner_radius)
+                .clamp(0.0, 32.0),
         }
     }
 }

@@ -29,6 +29,8 @@ pub struct UiStyle {
     pub button_border_enabled: bool,
     pub button_border_width: f32,
     pub button_border_color: RgbColor,
+    /// 按钮圆角；0 为直角
+    pub button_corner_radius: f32,
 }
 
 impl Default for UiStyle {
@@ -46,6 +48,7 @@ impl Default for UiStyle {
             button_border_enabled: false,
             button_border_width: 1.0,
             button_border_color: RgbColor::rgba(255, 255, 255, 38),
+            button_corner_radius: 8.0,
         }
     }
 }

@@ -139,6 +139,7 @@ fn theme_settings_to_file(theme: &ThemeSettings) -> ThemeSettingsFile {
         button_border_enabled: theme.button_border_enabled,
         button_border_width: theme.button_border_width,
         button_border_color: theme.button_border_color.clone(),
+        button_corner_radius: theme.button_corner_radius,
     }
 }
 
