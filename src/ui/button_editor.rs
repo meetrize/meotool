@@ -12,7 +12,7 @@ use crate::platform::RecordMode;
 
 use super::action_editor::{show_action_editor, ActionEditorState, MacroEditorRequest};
 
-use super::hotkey_recorder::{HotkeyRecorder, RecordingSlot};
+use super::hotkey_recorder::{hotkey_field, HotkeyRecorder, RecordingSlot};
 use super::icon_picker::{IconPickTarget, IconPicker};
 use super::icons::{resolve_icon_tint, IconCache};
 use super::overlay::{appearance_editor_viewport, script_editor_viewport};
@@ -89,6 +89,7 @@ impl Default for ButtonContextEditor {
                 border_color: None,
                 icon_color: None,
                 scope: ButtonScope::Always,
+                hotkey: None,
             },
             action_editor: ActionEditorState::default(),
             recorder: HotkeyRecorder::default(),
@@ -330,7 +331,7 @@ impl ButtonContextEditor {
         let mut should_close = false;
 
         let title = format!(
-            "编辑外观 P{}#{}（{}）",
+            "按钮设置 P{}#{}（{}）",
             self.profile_index,
             self.button_index,
             self.profile_name
@@ -493,6 +494,33 @@ impl ButtonContextEditor {
                 });
             }
         });
+
+        {
+            let mut hotkey = self.draft.hotkey.clone().unwrap_or_default();
+            let slot = RecordingSlot::Button {
+                profile: self.profile_index,
+                button: self.button_index,
+            };
+            hotkey_field(
+                ui,
+                ctx,
+                "快捷键",
+                &mut hotkey,
+                &mut self.recorder,
+                slot,
+            );
+            if ui.small_button("清除快捷键").clicked() {
+                hotkey.clear();
+            }
+            self.draft.hotkey = {
+                let t = hotkey.trim();
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t.to_string())
+                }
+            };
+        }
 
         show_appearance_section(
             ui,

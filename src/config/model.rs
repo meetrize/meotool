@@ -168,6 +168,8 @@ pub struct ButtonConfig {
     pub icon_color: Option<String>,
     /// 可见范围，默认始终显示
     pub scope: ButtonScope,
+    /// 全局快捷键（如 `Cmd+Shift+1`）；按下后执行本按钮动作。空 / None 表示未设置
+    pub hotkey: Option<String>,
 }
 
 /// 空槽位占位（不可见 / 未配置）
@@ -181,6 +183,7 @@ pub fn empty_slot_button() -> ButtonConfig {
         border_color: None,
         icon_color: None,
         scope: ButtonScope::Always,
+        hotkey: None,
     }
 }
 
@@ -601,6 +604,7 @@ mod tests {
             border_color: None,
             icon_color: None,
             scope,
+            hotkey: None,
         }
     }
 
@@ -685,6 +689,7 @@ mod tests {
             border_color: None,
             icon_color: None,
             scope: ButtonScope::Always,
+            hotkey: None,
         };
         let tip = btn.hover_tooltip().expect("tooltip");
         assert!(tip.contains("保存"));

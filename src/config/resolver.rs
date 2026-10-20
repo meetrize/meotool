@@ -72,6 +72,7 @@ mod tests {
                         border_color: None,
                         icon_color: None,
                         scope: ButtonScope::Always,
+                        hotkey: None,
                     }],
                 },
                 Profile {

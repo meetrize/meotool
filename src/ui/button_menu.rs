@@ -268,7 +268,7 @@ fn draw_menu_items(ui: &mut Ui, button: &ButtonConfig, action: &mut Option<Butto
     if ui.button("编辑脚本…").clicked() {
         *action = Some(ButtonMenuAction::Edit);
     }
-    if ui.button("编辑外观…").clicked() {
+    if ui.button("按键设置…").clicked() {
         *action = Some(ButtonMenuAction::EditAppearance);
     }
 

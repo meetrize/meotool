@@ -137,6 +137,61 @@ pub(crate) fn scope_bundle_row<T: Message>(
     }
 }
 
+/// 快捷键行：只读显示 + 录制 + 清除。
+pub(crate) fn hotkey_row<T: Message>(
+    mtm: MainThreadMarker,
+    parent: &NSView,
+    field_width: f64,
+    y: &mut f64,
+    target: &T,
+) -> (
+    Retained<NSTextField>,
+    Retained<NSButton>,
+    Retained<NSButton>,
+) {
+    unsafe {
+        let lab = NSTextField::labelWithString(&NSString::from_str("快捷键"), mtm);
+        lab.setFrame(NSRect::new(
+            NSPoint::new(CONTENT_PAD, *y),
+            NSSize::new(88.0, 22.0),
+        ));
+        let record_w = 72.0;
+        let clear_w = 56.0;
+        let gap = 8.0;
+        let end = FIELD_X + field_width;
+        let clear_x = end - clear_w;
+        let record_x = clear_x - gap - record_w;
+        let field_w = (record_x - gap - FIELD_X).max(100.0);
+        let field = NSTextField::initWithFrame(
+            mtm.alloc(),
+            NSRect::new(NSPoint::new(FIELD_X, *y - 2.0), NSSize::new(field_w, 24.0)),
+        );
+        field.setEditable(false);
+        field.setBezeled(true);
+        field.setStringValue(&NSString::from_str("未设置"));
+        let record = NSButton::initWithFrame(
+            mtm.alloc(),
+            NSRect::new(NSPoint::new(record_x, *y - 3.0), NSSize::new(record_w, 26.0)),
+        );
+        record.setTitle(&NSString::from_str("录制"));
+        record.setTarget(Some(action_target(target)));
+        record.setAction(Some(objc2::sel!(recordHotkeyClicked:)));
+        let clear = NSButton::initWithFrame(
+            mtm.alloc(),
+            NSRect::new(NSPoint::new(clear_x, *y - 3.0), NSSize::new(clear_w, 26.0)),
+        );
+        clear.setTitle(&NSString::from_str("清除"));
+        clear.setTarget(Some(action_target(target)));
+        clear.setAction(Some(objc2::sel!(clearHotkeyClicked:)));
+        parent.addSubview(&lab);
+        parent.addSubview(&field);
+        parent.addSubview(&record);
+        parent.addSubview(&clear);
+        *y += 36.0;
+        (field, record, clear)
+    }
+}
+
 pub(crate) fn switch_row<T: Message>(
     mtm: MainThreadMarker,
     parent: &NSView,

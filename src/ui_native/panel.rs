@@ -1128,7 +1128,7 @@ fn attach_button_context_menu(
         mtm,
         &menu,
         target,
-        "编辑外观…",
+        "按键设置…",
         index,
         ButtonMenuAction::EditAppearance,
     );

@@ -150,6 +150,11 @@ fn button_to_file(button: &ButtonConfig) -> ButtonFile {
         border_color: button.border_color.clone(),
         icon_color: button.icon_color.clone(),
         scope: scope_to_file(&button.scope),
+        hotkey: button
+            .hotkey
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
     }
 }
 

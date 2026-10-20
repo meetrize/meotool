@@ -266,8 +266,17 @@ impl NativeState {
         if let Err(err) = self.hotkeys.replace(&self.core.app_config.hotkeys) {
             log::warn!("re-register hotkeys: {err}");
         }
+        self.sync_button_hotkeys();
         self.apply(effect);
         self.pending_settings_save = Some(Instant::now() + SETTINGS_SAVE_DEBOUNCE);
+    }
+
+    fn sync_button_hotkeys(&mut self) {
+        let owned = self.core.button_hotkey_specs();
+        let specs: Vec<(usize, &str)> = owned.iter().map(|(i, s)| (*i, s.as_str())).collect();
+        if let Err(err) = self.hotkeys.set_button_hotkeys(&specs) {
+            log::warn!("re-register button hotkeys: {err}");
+        }
     }
 
     fn flush_pending_settings_save(&mut self, force: bool) {
@@ -1016,6 +1025,7 @@ impl NativeState {
                                 {
                                     log::warn!("re-register hotkeys after import: {err}");
                                 }
+                                self.sync_button_hotkeys();
                                 self.apply(effect);
                                 if self.settings.is_visible() {
                                     self.settings.reload_from_config(&self.core.app_config);
@@ -1038,6 +1048,7 @@ impl NativeState {
                                 {
                                     log::warn!("re-register hotkeys after backup restore: {err}");
                                 }
+                                self.sync_button_hotkeys();
                                 self.apply(effect);
                                 if self.settings.is_visible() {
                                     self.settings.reload_from_config(&self.core.app_config);
@@ -1067,6 +1078,7 @@ impl NativeState {
                     {
                         log::error!("save button failed: {err}");
                     }
+                    self.sync_button_hotkeys();
                     self.apply(effect);
                     self.cancel_app_pick();
                     self.script_editor.hide();
@@ -1381,6 +1393,7 @@ impl NativeState {
             if let Err(err) = self.hotkeys.replace(&self.core.app_config.hotkeys) {
                 log::warn!("re-register hotkeys after reload: {err}");
             }
+            self.sync_button_hotkeys();
             if self.settings.is_visible() {
                 let cfg = self.core.app_config.clone();
                 self.settings.reload_from_config(&cfg);
@@ -1393,7 +1406,12 @@ impl NativeState {
             let effect = self.core.handle(CoreCommand::ActiveWindow(
                 Some(w).filter(|w| !w.is_own_process()),
             ));
+            // 配置档切换后刷新按钮快捷键绑定
+            let before = self.core.current_profile.clone();
             self.apply(effect);
+            if self.core.current_profile != before {
+                self.sync_button_hotkeys();
+            }
         }
     }
 }
@@ -1619,6 +1637,7 @@ pub fn run_native() -> Result<(), String> {
         script_click_recorder: None,
         gesture_leave_hide_after: None,
     };
+    state.sync_button_hotkeys();
     state.sync_panel_if_needed();
     STATE.with(|slot| *slot.borrow_mut() = Some(state));
 

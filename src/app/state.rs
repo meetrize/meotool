@@ -329,14 +329,50 @@ impl AppState {
             .unwrap_or(1.0)
     }
 
+    /// 当前配置档中已设置快捷键的按钮：`(槽位索引, 快捷键规格)`
+    pub fn button_hotkey_specs(&self) -> Vec<(usize, String)> {
+        let Some(pi) = self.current_profile_index() else {
+            return Vec::new();
+        };
+        let Some(profile) = self.app_config.profiles.get(pi) else {
+            return Vec::new();
+        };
+        profile
+            .buttons
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| {
+                let spec = b.hotkey.as_deref()?.trim();
+                if spec.is_empty() {
+                    None
+                } else {
+                    Some((i, spec.to_string()))
+                }
+            })
+            .collect()
+    }
+
     pub fn trigger_button(&mut self, index: usize, theme: &Theme) -> bool {
-        let Some(button) = self.resolved_buttons.get(index).cloned() else {
+        // 优先取配置档原始按钮，使自定义快捷键在 scope 隐藏时仍可触发
+        let button = self
+            .current_profile_index()
+            .and_then(|pi| {
+                self.app_config
+                    .profiles
+                    .get(pi)
+                    .and_then(|p| p.buttons.get(index))
+                    .cloned()
+            })
+            .filter(|b| b.enabled && b.action.is_configured())
+            .or_else(|| {
+                self.resolved_buttons
+                    .get(index)
+                    .cloned()
+                    .filter(|b| b.enabled && b.action.is_configured())
+            });
+        let Some(button) = button else {
             return false;
         };
-
-        if !button.enabled || !button.action.is_configured() {
-            return false;
-        }
 
         if matches!(button.action, crate::config::Action::Script(_))
             && crate::action::is_script_running()

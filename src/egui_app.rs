@@ -229,7 +229,7 @@ impl MeoToolApp {
             .collapsed_icon
             .clone()
             .unwrap_or_else(|| PanelConfig::DEFAULT_COLLAPSED_ICON.into());
-        Self {
+        let mut app = Self {
             state: AppState::new(app_config, config_path, panel, profile_name, icon_dirs),
             theme,
             settings: SettingsEditor::default(),
@@ -258,7 +258,9 @@ impl MeoToolApp {
             window_watch,
             pending_settings_save: None,
             gesture_leave_hide_after: None,
-        }
+        };
+        app.sync_button_hotkeys();
+        app
     }
 
     fn dialogs_open(&self) -> bool {
@@ -357,8 +359,12 @@ impl MeoToolApp {
             if window.is_own_process() {
                 continue;
             }
+            let before = self.state.current_profile.clone();
             self.state.last_active_window = Some(window.clone());
             self.state.on_active_window_changed(&window);
+            if self.state.current_profile != before {
+                self.sync_button_hotkeys();
+            }
         }
     }
 
@@ -384,6 +390,7 @@ impl MeoToolApp {
                 }
                 HotkeyAction::ReloadConfig => {
                     self.state.reload_config();
+                    self.sync_button_hotkeys();
                     self.sync_tray_icon();
                     self.sync_viewport_size(ctx, self.state.effective_viewport_size());
                 }
@@ -396,9 +403,8 @@ impl MeoToolApp {
                     self.open_settings(ctx);
                 }
                 HotkeyAction::TriggerButton(index) => {
-                    if self.state.visible {
-                        self.trigger_panel_button(ctx, index);
-                    }
+                    // 按钮自定义快捷键：面板隐藏时也可触发
+                    self.trigger_panel_button(ctx, index);
                 }
             }
         }
@@ -460,10 +466,19 @@ impl MeoToolApp {
         if let Err(err) = self.hotkey_manager.replace(&self.state.app_config.hotkeys) {
             log::error!("re-register hotkeys failed: {err}");
         }
+        self.sync_button_hotkeys();
         self.sync_tray_icon();
         // 对话框打开时主面板已隐藏，避免改尺寸引发闪动
         if !self.dialogs_open() {
             self.sync_viewport_size(ctx, self.state.effective_viewport_size());
+        }
+    }
+
+    fn sync_button_hotkeys(&mut self) {
+        let owned = self.state.button_hotkey_specs();
+        let specs: Vec<(usize, &str)> = owned.iter().map(|(i, s)| (*i, s.as_str())).collect();
+        if let Err(err) = self.hotkey_manager.set_button_hotkeys(&specs) {
+            log::warn!("re-register button hotkeys: {err}");
         }
     }
 
@@ -540,6 +555,7 @@ impl MeoToolApp {
         hint: &str,
     ) {
         if self.state.update_current_profile_button(index, button) {
+            self.sync_button_hotkeys();
             match save_app_config(&self.state.config_path, &self.state.app_config) {
                 Ok(()) => {
                     self.state.hint = Some(crate::ui::HintOverlay::show(hint.into()));
@@ -1332,6 +1348,7 @@ impl eframe::App for MeoToolApp {
             if let Err(err) = self.hotkey_manager.replace(&self.state.app_config.hotkeys) {
                 log::error!("re-register hotkeys after reload: {err}");
             }
+            self.sync_button_hotkeys();
             self.rebuild_theme(ctx);
             self.sync_tray_icon();
             if !self.dialogs_open() {

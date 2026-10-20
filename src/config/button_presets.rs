@@ -126,6 +126,7 @@ mod tests {
             border_color: None,
             icon_color: None,
             scope: super::super::model::ButtonScope::Always,
+            hotkey: None,
         };
         apply_preset(&mut cfg, 3);
         assert_eq!(

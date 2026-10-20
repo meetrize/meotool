@@ -207,6 +207,9 @@ pub struct ButtonFile {
     pub icon_color: Option<String>,
     #[serde(default, skip_serializing_if = "is_always_scope")]
     pub scope: ButtonScopeFile,
+    /// 触发本按钮动作的全局快捷键
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hotkey: Option<String>,
 }
 
 fn default_enabled() -> bool {
@@ -434,6 +437,10 @@ impl ButtonFile {
             border_color: self.border_color,
             icon_color: self.icon_color,
             scope: self.scope.into_scope()?,
+            hotkey: self
+                .hotkey
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
         })
     }
 }
@@ -770,6 +777,7 @@ source = """
                     border_color: None,
                     icon_color: None,
                     scope: ButtonScope::Always,
+                    hotkey: None,
                 }],
             }],
         });

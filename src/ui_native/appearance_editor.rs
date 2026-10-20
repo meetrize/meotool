@@ -1,4 +1,4 @@
-//! 按钮外观编辑窗口（标签、图标、配色、可见范围、启用）。
+//! 按钮设置窗口（标签、图标、配色、快捷键、可见范围、启用）。
 
 use std::cell::RefCell;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -26,11 +26,12 @@ use crate::platform::resolve_native_icon_tint;
 
 use super::button_edit_session::ButtonEditSession;
 use super::button_editor_common::{
-    appearance_section, footer_btn, icon_row, labeled, labeled_pair, load_icon_image,
+    appearance_section, footer_btn, hotkey_row, icon_row, labeled, labeled_pair, load_icon_image,
     load_template_icon_image, ns_color_from_rgb, paint_view_background, popup, scope_bundle_row,
     scope_from_ui, set_well_color, style_preset_selection, switch_row, well_to_string,
     AppearanceUi, BUTTON_CORNER_RADIUS, CONTENT_PAD, FIELD_X,
 };
+use super::script_wizard::prompt_hotkey;
 use super::events::{emit, IconPickTarget, NativeUiEvent};
 use super::layout::{
     install_button_editor_chrome, layout_button_editor_chrome, scroll_document_to_top,
@@ -111,6 +112,14 @@ define_class!(
         fn inherit_icon_clicked(&self, _s: &AnyObject) {
             emit_appearance_editor(AppearanceEditorAction::InheritIcon);
         }
+        #[unsafe(method(recordHotkeyClicked:))]
+        fn record_hotkey_clicked(&self, _s: &AnyObject) {
+            emit_appearance_editor(AppearanceEditorAction::RecordHotkey);
+        }
+        #[unsafe(method(clearHotkeyClicked:))]
+        fn clear_hotkey_clicked(&self, _s: &AnyObject) {
+            emit_appearance_editor(AppearanceEditorAction::ClearHotkey);
+        }
     }
 );
 
@@ -135,6 +144,8 @@ enum AppearanceEditorAction {
     IconColorChanged,
     InheritBg,
     InheritIcon,
+    RecordHotkey,
+    ClearHotkey,
 }
 
 static APPEARANCE_EDITOR_TX: OnceLock<Mutex<Option<Sender<AppearanceEditorAction>>>> =
@@ -202,6 +213,11 @@ pub struct AppearanceEditorWindow {
     label: Retained<NSTextField>,
     icon: Retained<NSTextField>,
     icon_preview: Retained<NSImageView>,
+    hotkey_field: Retained<NSTextField>,
+    #[allow(dead_code)]
+    hotkey_record_btn: Retained<NSButton>,
+    #[allow(dead_code)]
+    hotkey_clear_btn: Retained<NSButton>,
     scope_mode: Retained<NSPopUpButton>,
     scope_bundle_label: Retained<NSTextField>,
     scope_bundle: Retained<NSTextField>,
@@ -250,7 +266,7 @@ impl AppearanceEditorWindow {
         };
         unsafe {
             window.setReleasedWhenClosed(false);
-            window.setTitle(&NSString::from_str("编辑外观"));
+            window.setTitle(&NSString::from_str("按钮设置"));
             window.setContentMinSize(NSSize::new(APPEARANCE_MIN_W, APPEARANCE_MIN_H));
             window.setDelegate(Some(ProtocolObject::from_ref(&*target)));
         }
@@ -276,6 +292,8 @@ impl AppearanceEditorWindow {
         let enabled = switch_row(mtm, &document, "启用", &mut y, tg);
         let label = labeled(mtm, &document, "标签", FIELD_W, &mut y);
         let (icon, icon_preview) = icon_row(mtm, &document, FIELD_W, &mut y, tg);
+        let (hotkey_field, hotkey_record_btn, hotkey_clear_btn) =
+            hotkey_row(mtm, &document, FIELD_W, &mut y, tg);
         let appearance = appearance_section(mtm, &document, FIELD_W, &mut y, tg);
 
         y += 8.0;
@@ -323,6 +341,9 @@ impl AppearanceEditorWindow {
             label,
             icon,
             icon_preview,
+            hotkey_field,
+            hotkey_record_btn,
+            hotkey_clear_btn,
             scope_mode,
             scope_bundle_label,
             scope_bundle,
@@ -342,6 +363,7 @@ impl AppearanceEditorWindow {
                 border_color: None,
                 icon_color: None,
                 scope: ButtonScope::Always,
+                hotkey: None,
             },
             icon_dirs: Vec::new(),
             theme_button_bg: RgbColor::rgba(40, 40, 40, 217),
@@ -365,7 +387,7 @@ impl AppearanceEditorWindow {
         self.load();
         unsafe {
             self.window.setTitle(&NSString::from_str(&format!(
-                "编辑外观 P{}#{}",
+                "按钮设置 P{}#{}",
                 session.profile, session.button
             )));
         }
@@ -443,6 +465,7 @@ impl AppearanceEditorWindow {
         session.draft.border_color = self.draft.border_color.clone();
         session.draft.icon_color = self.draft.icon_color.clone();
         session.draft.scope = scope;
+        session.draft.hotkey = self.draft.hotkey.clone();
     }
 
     fn merge_ui_into_draft(&mut self) {
@@ -505,6 +528,8 @@ impl AppearanceEditorWindow {
                 AppearanceEditorAction::IconColorChanged => self.sync_icon_from_well(),
                 AppearanceEditorAction::InheritBg => self.inherit_background(),
                 AppearanceEditorAction::InheritIcon => self.inherit_icon_color(),
+                AppearanceEditorAction::RecordHotkey => self.record_hotkey(),
+                AppearanceEditorAction::ClearHotkey => self.clear_hotkey(),
             }
         }
     }
@@ -538,8 +563,41 @@ impl AppearanceEditorWindow {
                 }
             }
         }
+        self.sync_hotkey_field();
         self.refresh_appearance_preview();
         self.sync_scope_fields_visible();
+    }
+
+    fn sync_hotkey_field(&self) {
+        let text = self
+            .draft
+            .hotkey
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("未设置");
+        unsafe {
+            self.hotkey_field
+                .setStringValue(&NSString::from_str(text));
+        }
+    }
+
+    fn record_hotkey(&mut self) {
+        if let Some(spec) = prompt_hotkey(self.mtm) {
+            let trimmed = spec.trim().to_string();
+            if trimmed.is_empty() {
+                self.draft.hotkey = None;
+            } else {
+                self.draft.hotkey = Some(trimmed);
+            }
+            self.sync_hotkey_field();
+        }
+        super::activation::present_utility_window(self.mtm, &self.window, &mut self.front_held);
+    }
+
+    fn clear_hotkey(&mut self) {
+        self.draft.hotkey = None;
+        self.sync_hotkey_field();
     }
 
     fn clear_icon(&mut self) {

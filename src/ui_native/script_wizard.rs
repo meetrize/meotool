@@ -198,7 +198,7 @@ pub fn prompt_hotkey(mtm: MainThreadMarker) -> Option<String> {
         alert.setAlertStyle(NSAlertStyle::Informational);
         alert.setMessageText(&NSString::from_str("录制快捷键"));
         alert.setInformativeText(&NSString::from_str(
-            "请按下要模拟的快捷键组合（Esc 取消）",
+            "请按下快捷键组合（Esc 取消）",
         ));
         alert.addButtonWithTitle(&NSString::from_str("取消"));
     }

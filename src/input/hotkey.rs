@@ -22,6 +22,9 @@ pub struct HotkeyManager {
     manager: GlobalHotKeyManager,
     bindings: HashMap<u32, HotkeyAction>,
     registered: Vec<HotKey>,
+    /// 按钮自定义快捷键（与全局快捷键分册注册，便于单独刷新）
+    button_bindings: HashMap<u32, usize>,
+    button_registered: Vec<HotKey>,
     numpad_bindings: HashMap<u32, usize>,
     #[allow(dead_code)]
     numpad_registered: Vec<HotKey>,
@@ -95,6 +98,8 @@ impl HotkeyManager {
             manager,
             bindings,
             registered,
+            button_bindings: HashMap::new(),
+            button_registered: Vec::new(),
             numpad_bindings: HashMap::new(),
             numpad_registered: Vec::new(),
             numpad_armed: false,
@@ -102,6 +107,57 @@ impl HotkeyManager {
             event_rx,
             _pump: pump,
         })
+    }
+
+    /// 按当前配置档按钮槽位注册自定义快捷键；空字符串 / 非法规格会跳过。
+    pub fn set_button_hotkeys(&mut self, specs: &[(usize, &str)]) -> Result<(), String> {
+        self.unregister_button_hotkeys()?;
+        let mut seen_ids = std::collections::HashSet::new();
+        for &(index, spec) in specs {
+            let trimmed = spec.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let hotkey = match parse_global_hotkey(trimmed) {
+                Ok(hk) => hk,
+                Err(err) => {
+                    log::warn!("skip button {index} hotkey '{trimmed}': {err}");
+                    continue;
+                }
+            };
+            let id = hotkey.id();
+            if self.bindings.contains_key(&id) || seen_ids.contains(&id) {
+                log::warn!(
+                    "button {index} hotkey '{trimmed}' conflicts with another binding, skipped"
+                );
+                continue;
+            }
+            if let Err(err) = self.manager.register(hotkey) {
+                log::warn!("register button {index} hotkey '{trimmed}': {err}");
+                continue;
+            }
+            seen_ids.insert(id);
+            self.button_bindings.insert(id, index);
+            self.button_registered.push(hotkey);
+        }
+        if !self.button_registered.is_empty() {
+            log::info!(
+                "registered {} button hotkey(s)",
+                self.button_registered.len()
+            );
+        }
+        Ok(())
+    }
+
+    fn unregister_button_hotkeys(&mut self) -> Result<(), String> {
+        if !self.button_registered.is_empty() {
+            self.manager
+                .unregister_all(&self.button_registered)
+                .map_err(|e| format!("unregister button hotkeys: {e}"))?;
+        }
+        self.button_bindings.clear();
+        self.button_registered.clear();
+        Ok(())
     }
 
     /// 面板可见时注册 Option+小键盘数字；隐藏时注销
@@ -198,6 +254,9 @@ impl HotkeyManager {
             if event.state == HotKeyState::Pressed {
                 if let Some(action) = self.bindings.get(&event.id) {
                     return Some(*action);
+                }
+                if let Some(&index) = self.button_bindings.get(&event.id) {
+                    return Some(HotkeyAction::TriggerButton(index));
                 }
                 if let Some(&index) = self.numpad_bindings.get(&event.id) {
                     return Some(HotkeyAction::TriggerButton(index));
