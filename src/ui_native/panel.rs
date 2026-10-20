@@ -23,6 +23,8 @@ use crate::platform::resolve_native_icon_tint;
 const TOOLTIP_MAX_WIDTH: f64 = 320.0;
 /// tooltip 内容区内边距
 const TOOLTIP_PADDING: f64 = 8.0;
+/// tooltip 背景圆角
+const TOOLTIP_CORNER_RADIUS: f64 = 8.0;
 
 use super::events::{decode_menu_tag, emit, encode_menu_tag, ButtonMenuAction, NativeUiEvent};
 use super::icon_cache::NativeIconCache;
@@ -568,30 +570,35 @@ impl NativePanel {
 
         let twin = unsafe {
             let fr = self.panel.frame();
-            let screen = objc2_app_kit::NSScreen::mainScreen(mtm)
+            // 必须用面板所在屏幕，勿用 mainScreen（多屏时会把 tooltip 夹到另一块屏）
+            let screen = self
+                .panel
+                .screen()
+                .or_else(|| objc2_app_kit::NSScreen::mainScreen(mtm))
                 .map(|s| s.frame())
                 .unwrap_or(NSRect::new(
                     NSPoint::new(0.0, 0.0),
                     NSSize::new(1440.0, 900.0),
                 ));
-            // 优先锚在悬停按钮上方；超出屏幕则改到按钮下方
+            let screen_min_x = screen.origin.x + 4.0;
+            let screen_max_x = (screen.origin.x + screen.size.width - tw - 4.0).max(screen_min_x);
+            let screen_min_y = screen.origin.y + 4.0;
+            let screen_max_y = (screen.origin.y + screen.size.height - th - 4.0).max(screen_min_y);
+
+            // 锚在悬停按钮上方（同屏）；上方放不下再改到按钮下方
             let mut sx = fr.origin.x + button_rect.origin.x
                 + (button_rect.size.width - tw) * 0.5;
             let above_y = fr.origin.y + button_rect.origin.y + button_rect.size.height + 6.0;
             let below_y = fr.origin.y + button_rect.origin.y - th - 6.0;
-            let mut sy = if above_y + th <= screen.origin.y + screen.size.height {
+            let mut sy = if above_y <= screen_max_y {
                 above_y
-            } else {
+            } else if below_y >= screen_min_y {
                 below_y
+            } else {
+                above_y.clamp(screen_min_y, screen_max_y)
             };
-            sx = sx.clamp(
-                screen.origin.x + 4.0,
-                (screen.origin.x + screen.size.width - tw - 4.0).max(screen.origin.x + 4.0),
-            );
-            sy = sy.clamp(
-                screen.origin.y + 4.0,
-                (screen.origin.y + screen.size.height - th - 4.0).max(screen.origin.y + 4.0),
-            );
+            sx = sx.clamp(screen_min_x, screen_max_x);
+            sy = sy.clamp(screen_min_y, screen_max_y);
 
             let win = NSWindow::initWithContentRect_styleMask_backing_defer(
                 mtm.alloc(),
@@ -604,8 +611,8 @@ impl NativePanel {
             win.setHasShadow(true);
             win.setIgnoresMouseEvents(true);
             win.setLevel(NSStatusWindowLevel + 1);
-            // 约 60% 不透明度，避免挡住下方内容
-            win.setBackgroundColor(Some(&NSColor::colorWithWhite_alpha(0.12, 0.60)));
+            // 窗口本身透明，圆角画在 contentView layer 上
+            win.setBackgroundColor(Some(&NSColor::clearColor()));
             win
         };
 
@@ -642,6 +649,12 @@ impl NativePanel {
             v.addSubview(&label);
             v
         };
+        // 浅黑半透明圆角底
+        paint_view_background(
+            &content,
+            RgbColor::rgba(30, 30, 30, 153), // ≈ white 0.12 @ 60%
+            TOOLTIP_CORNER_RADIUS,
+        );
         unsafe {
             twin.setContentView(Some(&content));
         }
