@@ -63,10 +63,6 @@ define_class!(
     }
 
     impl AppearanceEditorTarget {
-        #[unsafe(method(saveClicked:))]
-        fn save_clicked(&self, _s: &AnyObject) {
-            emit_appearance_editor(AppearanceEditorAction::Save);
-        }
         #[unsafe(method(cancelClicked:))]
         fn cancel_clicked(&self, _s: &AnyObject) {
             emit_appearance_editor(AppearanceEditorAction::Cancel);
@@ -120,6 +116,10 @@ define_class!(
         fn clear_hotkey_clicked(&self, _s: &AnyObject) {
             emit_appearance_editor(AppearanceEditorAction::ClearHotkey);
         }
+        #[unsafe(method(fieldChanged:))]
+        fn field_changed(&self, _s: &AnyObject) {
+            emit_appearance_editor(AppearanceEditorAction::FieldChanged);
+        }
     }
 );
 
@@ -132,7 +132,6 @@ impl AppearanceEditorTarget {
 
 #[derive(Debug, Clone)]
 enum AppearanceEditorAction {
-    Save,
     Cancel,
     PickIcon,
     ClearIcon,
@@ -146,6 +145,7 @@ enum AppearanceEditorAction {
     InheritIcon,
     RecordHotkey,
     ClearHotkey,
+    FieldChanged,
 }
 
 static APPEARANCE_EDITOR_TX: OnceLock<Mutex<Option<Sender<AppearanceEditorAction>>>> =
@@ -156,7 +156,6 @@ struct AppearanceEditorLiveLayout {
     scroll: Retained<NSScrollView>,
     document: Retained<NSView>,
     footer: Retained<NSView>,
-    save: Retained<NSButton>,
     cancel: Retained<NSButton>,
     content_h: f64,
 }
@@ -186,7 +185,7 @@ fn layout_appearance_editor_live_now() {
             &live.scroll,
             &live.document,
             &live.footer,
-            Some(&live.save),
+            None,
             Some(&live.cancel),
             None,
             0.0,
@@ -281,10 +280,8 @@ impl AppearanceEditorWindow {
         let scroll = chrome.scroll.clone();
         let footer = chrome.footer.clone();
 
-        let save_btn = footer_btn(mtm, tg, "保存", objc2::sel!(saveClicked:));
-        let cancel_btn = footer_btn(mtm, tg, "取消", objc2::sel!(cancelClicked:));
+        let cancel_btn = footer_btn(mtm, tg, "关闭", objc2::sel!(cancelClicked:));
         unsafe {
-            footer.addSubview(&save_btn);
             footer.addSubview(&cancel_btn);
         }
 
@@ -311,6 +308,14 @@ impl AppearanceEditorWindow {
             scope_bundle_row(mtm, &document, FIELD_W, &mut y, tg);
         let (scope_app_label, scope_app) =
             labeled_pair(mtm, &document, "Scope 应用名", FIELD_W, &mut y);
+        unsafe {
+            enabled.setTarget(Some(tg));
+            enabled.setAction(Some(objc2::sel!(fieldChanged:)));
+            for f in [&label, &scope_bundle, &scope_app] {
+                f.setTarget(Some(tg));
+                f.setAction(Some(objc2::sel!(fieldChanged:)));
+            }
+        }
 
         let content_h = y + CONTENT_PAD;
         let fitted_h = content_h + BTN_EDITOR_FOOTER_H;
@@ -327,7 +332,6 @@ impl AppearanceEditorWindow {
             scroll: scroll.clone(),
             document: document.clone(),
             footer: footer.clone(),
-            save: save_btn.clone(),
             cancel: cancel_btn.clone(),
             content_h,
         }));
@@ -440,6 +444,17 @@ impl AppearanceEditorWindow {
         self.refresh_appearance_preview();
     }
 
+    /// 合并表单 → session，并发出实时写回（不关窗）。
+    pub fn push_live(&mut self, session: &mut ButtonEditSession) {
+        self.merge_ui_into_draft();
+        self.collect(session);
+        emit(NativeUiEvent::ApplyButtonLive {
+            profile: session.profile,
+            button: session.button,
+            config: session.draft.clone(),
+        });
+    }
+
     /// 将表单字段写入 `session.draft`（保留 `draft.action` 不变）。
     pub fn collect(&self, session: &mut ButtonEditSession) {
         let enabled = unsafe { self.enabled.state() } == NSControlStateValueOn;
@@ -488,17 +503,11 @@ impl AppearanceEditorWindow {
     pub fn poll(&mut self, session: &mut ButtonEditSession) {
         while let Ok(action) = self.action_rx.try_recv() {
             match action {
-                AppearanceEditorAction::Save => {
+                AppearanceEditorAction::Cancel => {
+                    // 配色等已实时写回；关闭即保留当前状态（不回滚）
                     self.merge_ui_into_draft();
                     self.collect(session);
-                    emit(NativeUiEvent::SaveButton {
-                        profile: session.profile,
-                        button: session.button,
-                        config: session.draft.clone(),
-                    });
-                    self.hide();
-                }
-                AppearanceEditorAction::Cancel => {
+                    session.original = session.draft.clone();
                     emit(NativeUiEvent::CancelButtonEditor);
                     self.hide();
                 }
@@ -508,13 +517,20 @@ impl AppearanceEditorWindow {
                         button: self.button,
                     }));
                 }
-                AppearanceEditorAction::ClearIcon => self.clear_icon(),
-                AppearanceEditorAction::IconEdited => self.refresh_appearance_preview(),
+                AppearanceEditorAction::ClearIcon => {
+                    self.clear_icon();
+                    self.push_live(session);
+                }
+                AppearanceEditorAction::IconEdited => {
+                    self.refresh_appearance_preview();
+                    self.push_live(session);
+                }
                 AppearanceEditorAction::ScopeModeChanged => {
                     if unsafe { self.scope_mode.indexOfSelectedItem() } != 1 && self.app_picking {
                         emit(NativeUiEvent::CancelAppPick);
                     }
                     self.sync_scope_fields_visible();
+                    self.push_live(session);
                 }
                 AppearanceEditorAction::PickApp => {
                     if self.app_picking {
@@ -523,13 +539,37 @@ impl AppearanceEditorWindow {
                         emit(NativeUiEvent::StartAppPick);
                     }
                 }
-                AppearanceEditorAction::AppearancePreset(index) => self.apply_preset(index),
-                AppearanceEditorAction::BgColorChanged => self.sync_bg_from_well(),
-                AppearanceEditorAction::IconColorChanged => self.sync_icon_from_well(),
-                AppearanceEditorAction::InheritBg => self.inherit_background(),
-                AppearanceEditorAction::InheritIcon => self.inherit_icon_color(),
-                AppearanceEditorAction::RecordHotkey => self.record_hotkey(),
-                AppearanceEditorAction::ClearHotkey => self.clear_hotkey(),
+                AppearanceEditorAction::AppearancePreset(index) => {
+                    self.apply_preset(index);
+                    self.push_live(session);
+                }
+                AppearanceEditorAction::BgColorChanged => {
+                    self.sync_bg_from_well();
+                    self.push_live(session);
+                }
+                AppearanceEditorAction::IconColorChanged => {
+                    self.sync_icon_from_well();
+                    self.push_live(session);
+                }
+                AppearanceEditorAction::InheritBg => {
+                    self.inherit_background();
+                    self.push_live(session);
+                }
+                AppearanceEditorAction::InheritIcon => {
+                    self.inherit_icon_color();
+                    self.push_live(session);
+                }
+                AppearanceEditorAction::RecordHotkey => {
+                    self.record_hotkey();
+                    self.push_live(session);
+                }
+                AppearanceEditorAction::ClearHotkey => {
+                    self.clear_hotkey();
+                    self.push_live(session);
+                }
+                AppearanceEditorAction::FieldChanged => {
+                    self.push_live(session);
+                }
             }
         }
     }

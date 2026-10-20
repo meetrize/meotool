@@ -92,6 +92,12 @@ pub enum NativeUiEvent {
         button: usize,
         config: ButtonConfig,
     },
+    /// 按钮设置实时预览写回（不关窗）
+    ApplyButtonLive {
+        profile: usize,
+        button: usize,
+        config: ButtonConfig,
+    },
     CancelButtonEditor,
     /// 编辑器试运行动作脚本（不写盘）
     TryRunScript {

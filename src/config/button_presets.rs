@@ -11,8 +11,13 @@ pub struct ButtonColorPreset {
     pub icon_color: &'static str,
 }
 
-/// 九套预设，兼顾深色面板上的可读性与风格差异。
+/// 九套预设；第一项为面板默认风（浅蓝底 + 深灰图标）。
 pub const BUTTON_COLOR_PRESETS: [ButtonColorPreset; 9] = [
+    ButtonColorPreset {
+        name: "默认",
+        background_color: "rgba(175, 182, 202, 0.878)",
+        icon_color: "rgba(0, 0, 0, 0.875)",
+    },
     ButtonColorPreset {
         name: "石墨",
         background_color: "#2A2A2A",
@@ -52,11 +57,6 @@ pub const BUTTON_COLOR_PRESETS: [ButtonColorPreset; 9] = [
         name: "极简",
         background_color: "rgba(0, 0, 0, 0.35)",
         icon_color: "#FFFFFF",
-    },
-    ButtonColorPreset {
-        name: "高对比",
-        background_color: "#0D0D0D",
-        icon_color: "#FFEB3B",
     },
 ];
 

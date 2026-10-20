@@ -600,10 +600,16 @@ pub fn layout_button_editor_chrome(
                 NSPoint::new(w - 116.0, 12.0),
                 NSSize::new(100.0, 28.0),
             ));
-        }
-        if let Some(cancel) = cancel {
+            if let Some(cancel) = cancel {
+                cancel.setFrame(NSRect::new(
+                    NSPoint::new(w - 224.0, 12.0),
+                    NSSize::new(100.0, 28.0),
+                ));
+            }
+        } else if let Some(cancel) = cancel {
+            // 仅关闭/取消时靠右
             cancel.setFrame(NSRect::new(
-                NSPoint::new(w - 224.0, 12.0),
+                NSPoint::new(w - 116.0, 12.0),
                 NSSize::new(100.0, 28.0),
             ));
         }

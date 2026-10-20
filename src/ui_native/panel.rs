@@ -301,7 +301,6 @@ pub struct NativePanel {
 
 impl NativePanel {
     pub fn new(mtm: MainThreadMarker) -> Self {
-        reduce_initial_tooltip_delay();
         let (tx, rx) = mpsc::channel();
         *button_click_tx().lock().unwrap() = Some(tx);
 
@@ -1356,30 +1355,9 @@ fn style_grid_button(
             }
         }
 
-        // 悬停快速显示脚本/动作内容（各显示模式一致）
-        if let Some(tip) = cfg.hover_tooltip() {
-            button.setToolTip(Some(&NSString::from_str(&tip)));
-        } else {
-            button.setToolTip(None);
-        }
+        // 不用系统 setToolTip（灰底、延迟长，且会与自绘 tooltip 叠两层）
+        button.setToolTip(None);
     }
-}
-
-/// 缩短系统 tooltip 初始延迟，悬停即可较快看到脚本内容。
-fn reduce_initial_tooltip_delay() {
-    use std::sync::Once;
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| {
-        unsafe {
-            let defaults: *const AnyObject =
-                msg_send![objc2::class!(NSUserDefaults), standardUserDefaults];
-            let key = NSString::from_str("NSInitialToolTipDelay");
-            // 约 80ms；系统默认约 1s
-            let value: *const AnyObject =
-                msg_send![objc2::class!(NSNumber), numberWithInt: 80_i32];
-            let _: () = msg_send![defaults, setObject: value, forKey: &*key];
-        }
-    });
 }
 
 fn text_label(button: &ButtonConfig, index: usize) -> String {

@@ -279,6 +279,30 @@ impl NativeState {
         }
     }
 
+    /// 写回按钮配置并刷新面板。`immediate_save` 为 false 时走防抖落盘。
+    fn apply_button_config(
+        &mut self,
+        profile: usize,
+        button: usize,
+        config: crate::config::ButtonConfig,
+        immediate_save: bool,
+    ) {
+        let effect = self.core.update_profile_button(profile, button, config);
+        self.sync_button_hotkeys();
+        self.apply(effect);
+        if immediate_save {
+            if let Err(err) = save_app_config(&self.core.config_path, &self.core.app_config) {
+                log::error!("save button failed: {err}");
+            }
+        } else {
+            self.pending_settings_save = Some(Instant::now() + SETTINGS_SAVE_DEBOUNCE);
+        }
+        if self.settings.is_visible() {
+            let cfg = self.core.app_config.clone();
+            self.settings.reload_from_config(&cfg);
+        }
+    }
+
     fn flush_pending_settings_save(&mut self, force: bool) {
         let due = self.pending_settings_save.is_some_and(|deadline| {
             force || Instant::now() >= deadline
@@ -606,6 +630,9 @@ impl NativeState {
                 if self.appearance_editor.is_app_picking() {
                     self.appearance_editor
                         .apply_app_pick(bundle_id, app_name);
+                    if let Some(session) = self.button_edit_session.as_mut() {
+                        self.appearance_editor.push_live(session);
+                    }
                 } else {
                     self.script_editor.apply_app_pick(bundle_id, app_name);
                 }
@@ -1071,30 +1098,45 @@ impl NativeState {
                     if let Some(session) = self.button_edit_session.as_mut() {
                         if session.matches(profile, button) {
                             session.apply_saved(config.clone());
+                            session.original = config.clone();
                         }
                     }
-                    let effect = self.core.update_profile_button(profile, button, config);
-                    if let Err(err) = save_app_config(&self.core.config_path, &self.core.app_config)
-                    {
-                        log::error!("save button failed: {err}");
-                    }
-                    self.sync_button_hotkeys();
-                    self.apply(effect);
+                    self.apply_button_config(profile, button, config, true);
                     self.cancel_app_pick();
                     self.script_editor.hide();
                     self.appearance_editor.hide();
                     if !self.button_editor_any_visible() {
                         self.button_edit_session = None;
                     }
-                    if self.settings.is_visible() {
-                        let cfg = self.core.app_config.clone();
-                        self.settings.reload_from_config(&cfg);
+                }
+                NativeUiEvent::ApplyButtonLive {
+                    profile,
+                    button,
+                    config,
+                } => {
+                    if let Some(session) = self.button_edit_session.as_mut() {
+                        if session.matches(profile, button) {
+                            session.apply_saved(config.clone());
+                        }
                     }
+                    self.apply_button_config(profile, button, config, false);
                 }
                 NativeUiEvent::CancelButtonEditor => {
                     self.cancel_app_pick();
                     self.stop_script_click_capture();
                     self.stop_script_macro_record();
+                    // 取消：恢复打开时的快照（若编辑中曾实时写回）
+                    if let Some(session) = self.button_edit_session.take() {
+                        let effect = self.core.update_profile_button(
+                            session.profile,
+                            session.button,
+                            session.original,
+                        );
+                        self.sync_button_hotkeys();
+                        self.apply(effect);
+                        self.pending_settings_save =
+                            Some(Instant::now() + SETTINGS_SAVE_DEBOUNCE);
+                    }
                     self.close_button_editors();
                 }
                 NativeUiEvent::TryRunScript {
@@ -1145,6 +1187,9 @@ impl NativeState {
                                 .is_some_and(|s| s.matches(profile, button))
                         {
                             self.appearance_editor.set_icon_name(&name);
+                            if let Some(session) = self.button_edit_session.as_mut() {
+                                self.appearance_editor.push_live(session);
+                            }
                         }
                     }
                 },

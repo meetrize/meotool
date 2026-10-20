@@ -9,6 +9,8 @@ pub struct ButtonEditSession {
     pub profile: usize,
     pub button: usize,
     pub draft: ButtonConfig,
+    /// 打开编辑器时的快照；取消时恢复
+    pub original: ButtonConfig,
     pub attached_macro: Option<MouseMacro>,
     pub draft_legacy: bool,
     pub icon_dirs: Vec<PathBuf>,
@@ -28,10 +30,12 @@ impl ButtonEditSession {
         use crate::action::{action_attached_macro, action_needs_legacy_upgrade};
         let draft_legacy = action_needs_legacy_upgrade(&draft.action);
         let attached_macro = action_attached_macro(&draft.action);
+        let original = draft.clone();
         Self {
             profile,
             button,
             draft,
+            original,
             attached_macro,
             draft_legacy,
             icon_dirs: icon_dirs.to_vec(),
