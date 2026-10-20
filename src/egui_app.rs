@@ -118,6 +118,10 @@ pub fn run() -> eframe::Result<()> {
                 })
                 .ok();
             cc.egui_ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            // 按钮悬停快速显示脚本内容
+            cc.egui_ctx.style_mut(|style| {
+                style.interaction.tooltip_delay = 0.08;
+            });
             Ok(Box::new(MeoToolApp::new(
                 app_config,
                 config_file_path,

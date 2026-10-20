@@ -392,6 +392,90 @@ impl Action {
             _ => true,
         }
     }
+
+    /// 悬停预览用的动作正文（脚本优先展示源码）
+    pub fn hover_body(&self) -> Option<String> {
+        match self {
+            Action::None => None,
+            Action::Script(s) => {
+                let src = s.source.trim();
+                if src.is_empty() {
+                    None
+                } else {
+                    Some(truncate_hover_text(src, HOVER_TOOLTIP_MAX_CHARS))
+                }
+            }
+            Action::Hotkey(keys) => {
+                let spec = crate::config::export::keys_to_hotkey_string(keys);
+                if spec.is_empty() {
+                    None
+                } else {
+                    Some(format!("快捷键 {spec}"))
+                }
+            }
+            Action::OpenApp { target } => Some(format!("打开应用\n{target}")),
+            Action::Shell { command } => Some(format!(
+                "Shell\n{}",
+                truncate_hover_text(command, HOVER_TOOLTIP_MAX_CHARS)
+            )),
+            Action::OpenUrl { url } => Some(format!("打开链接\n{url}")),
+            Action::OpenFile { path } => Some(format!("打开文件\n{path}")),
+            Action::PasteText { text } => Some(format!(
+                "粘贴文本\n{}",
+                truncate_hover_text(text, HOVER_TOOLTIP_MAX_CHARS)
+            )),
+            Action::MouseMacro(m) => Some(format!("鼠标宏（{} 步）", m.steps.len())),
+        }
+    }
+
+    /// 用于面板指纹：脚本改内容后也能刷新 tooltip
+    pub fn hover_fingerprint(&self) -> String {
+        match self {
+            Action::None => String::new(),
+            Action::Script(s) => format!("script:{}", s.source),
+            Action::Hotkey(keys) => {
+                format!("hotkey:{}", crate::config::export::keys_to_hotkey_string(keys))
+            }
+            Action::OpenApp { target } => format!("app:{target}"),
+            Action::Shell { command } => format!("shell:{command}"),
+            Action::OpenUrl { url } => format!("url:{url}"),
+            Action::OpenFile { path } => format!("file:{path}"),
+            Action::PasteText { text } => format!("paste:{text}"),
+            Action::MouseMacro(m) => format!("macro:{}", m.steps.len()),
+        }
+    }
+}
+
+/// 悬停 tooltip 最大字符数（按 Unicode 标量），避免超长脚本撑爆系统 tip
+const HOVER_TOOLTIP_MAX_CHARS: usize = 1200;
+
+fn truncate_hover_text(text: &str, max_chars: usize) -> String {
+    let count = text.chars().count();
+    if count <= max_chars {
+        return text.to_string();
+    }
+    let truncated: String = text.chars().take(max_chars).collect();
+    format!("{truncated}…")
+}
+
+impl ButtonConfig {
+    /// 鼠标悬停时展示的文案：优先脚本/动作内容，无动作时回退到标签
+    pub fn hover_tooltip(&self) -> Option<String> {
+        let label = self.label.trim();
+        let body = self.action.hover_body();
+        match (label.is_empty(), body) {
+            (true, None) => None,
+            (false, None) => Some(label.to_string()),
+            (true, Some(body)) => Some(body),
+            (false, Some(body)) => {
+                if body.lines().next() == Some(label) {
+                    Some(body)
+                } else {
+                    Some(format!("{label}\n\n{body}"))
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -588,5 +672,23 @@ mod tests {
         let resolved = panel.resolve_visibility(Some(&vscode));
         assert_eq!(resolved[1].label, "B");
         assert!(resolved[1].enabled);
+    }
+
+    #[test]
+    fn hover_tooltip_prefers_script_source() {
+        let btn = ButtonConfig {
+            label: "保存".into(),
+            icon: None,
+            action: Action::Script(ActionScript::from_source("快捷键 Cmd+S\n等待 100\n")),
+            enabled: true,
+            background_color: None,
+            border_color: None,
+            icon_color: None,
+            scope: ButtonScope::Always,
+        };
+        let tip = btn.hover_tooltip().expect("tooltip");
+        assert!(tip.contains("保存"));
+        assert!(tip.contains("快捷键 Cmd+S"));
+        assert!(tip.contains("等待 100"));
     }
 }

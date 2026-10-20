@@ -53,8 +53,10 @@ pub fn paint_button(
         if response.clicked() && enabled {
             clicked = true;
         }
-        if response.hovered() && enabled && mode != DisplayMode::Text {
-            response.on_hover_text(&button.label);
+        if response.hovered() && enabled {
+            if let Some(tip) = button.hover_tooltip() {
+                response.on_hover_text(tip);
+            }
         }
     });
 

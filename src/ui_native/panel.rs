@@ -8,8 +8,8 @@ use objc2::runtime::AnyObject;
 use objc2::{define_class, msg_send, MainThreadOnly};
 use objc2_app_kit::{
     NSBackingStoreType, NSBezelStyle, NSButton, NSCellImagePosition, NSColor, NSEvent,
-    NSImageScaling, NSMenu, NSMenuItem, NSPanel, NSStatusWindowLevel, NSTextField, NSView,
-    NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSImageScaling, NSMenu, NSMenuItem, NSPanel, NSStatusWindowLevel, NSTextAlignment,
+    NSTextField, NSView, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 use objc2_foundation::{
     MainThreadMarker, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -18,6 +18,11 @@ use objc2_foundation::{
 use crate::app::NativeMemoryCounters;
 use crate::config::{parse_color, ButtonConfig, DisplayMode, PanelConfig, RgbColor};
 use crate::platform::resolve_native_icon_tint;
+
+/// tooltip 内容区最大宽度（pt）
+const TOOLTIP_MAX_WIDTH: f64 = 320.0;
+/// tooltip 内容区内边距
+const TOOLTIP_PADDING: f64 = 8.0;
 
 use super::events::{decode_menu_tag, emit, encode_menu_tag, ButtonMenuAction, NativeUiEvent};
 use super::icon_cache::NativeIconCache;
@@ -283,10 +288,19 @@ pub struct NativePanel {
     collapsed_shell: Option<CollapsedShell>,
     counters: NativeMemoryCounters,
     icon_cache: NativeIconCache,
+    /// 按钮在窗口内的矩形（左下原点），按创建顺序存储
+    button_rects: Vec<NSRect>,
+    /// 按钮对应的悬停文本
+    button_tooltips: Vec<Option<String>>,
+    /// 浮动 tooltip 窗口（懒创建）
+    tooltip_win: Option<Retained<NSWindow>>,
+    /// 当前显示的 tooltip 文本
+    current_tooltip: Option<String>,
 }
 
 impl NativePanel {
     pub fn new(mtm: MainThreadMarker) -> Self {
+        reduce_initial_tooltip_delay();
         let (tx, rx) = mpsc::channel();
         *button_click_tx().lock().unwrap() = Some(tx);
 
@@ -330,6 +344,10 @@ impl NativePanel {
             collapsed_shell: None,
             counters: NativeMemoryCounters::default(),
             icon_cache: NativeIconCache::default(),
+            button_rects: Vec::new(),
+            button_tooltips: Vec::new(),
+            tooltip_win: None,
+            current_tooltip: None,
         }
     }
 
@@ -476,6 +494,172 @@ impl NativePanel {
             && (my as f64) < y_bottom_screen
     }
 
+    /// 每帧鼠标移动时调用：检测指针是否悬停在按钮上，即时显示/隐藏 tooltip。
+    ///
+    /// 浮动 `NSPanel` 非 key window 时系统 `setToolTip` 常不弹出，故用自绘窗口。
+    pub fn update_tooltip_on_move(&mut self, mtm: MainThreadMarker, mx: f32, my: f32) {
+        if self.button_rects.is_empty() {
+            self.hide_tooltip();
+            return;
+        }
+
+        let panel_frame = unsafe { self.panel.frame() };
+        let screen_h = cocoa_screen_height(mtm, &self.panel);
+
+        // 转换鼠标到窗口内容坐标（Cocoa 左下原点；my 为屏幕左上原点）
+        let local_x = mx as f64 - panel_frame.origin.x;
+        let local_y = (screen_h - my as f64) - panel_frame.origin.y;
+
+        let mut hit_index: Option<usize> = None;
+        for (i, rect) in self.button_rects.iter().enumerate() {
+            if local_x >= rect.origin.x
+                && local_x < rect.origin.x + rect.size.width
+                && local_y >= rect.origin.y
+                && local_y < rect.origin.y + rect.size.height
+            {
+                hit_index = Some(i);
+                break;
+            }
+        }
+
+        match hit_index {
+            Some(i) => {
+                let new_tip: Option<String> = self.button_tooltips.get(i).cloned().flatten();
+                let hit_rect = self.button_rects[i];
+                let old_tip = self.current_tooltip.as_deref().filter(|t| !t.is_empty());
+                if new_tip.as_deref() != old_tip {
+                    if let Some(text) = new_tip {
+                        self.show_tooltip(mtm, &text, hit_rect);
+                    } else {
+                        self.hide_tooltip();
+                    }
+                }
+            }
+            None => {
+                self.hide_tooltip();
+            }
+        }
+    }
+
+    fn show_tooltip(&mut self, mtm: MainThreadMarker, text: &str, button_rect: NSRect) {
+        // 先收起旧窗，避免切换按钮时残留
+        if let Some(win) = self.tooltip_win.take() {
+            unsafe {
+                win.orderOut(None);
+            }
+        }
+        self.current_tooltip = Some(text.to_string());
+
+        let lines: Vec<&str> = text.lines().collect();
+        let line_count = lines.len().max(1);
+        let max_line_chars = lines
+            .iter()
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(text.len());
+        let est_chars_per_line = max_line_chars.min(48);
+        let tw = (est_chars_per_line as f64 * 7.0 + TOOLTIP_PADDING * 2.0)
+            .max(140.0)
+            .min(TOOLTIP_MAX_WIDTH);
+        let line_h = 15.0;
+        let th = (line_count as f64 * line_h + TOOLTIP_PADDING * 2.0)
+            .max(28.0)
+            .min(280.0);
+
+        let twin = unsafe {
+            let fr = self.panel.frame();
+            let screen = objc2_app_kit::NSScreen::mainScreen(mtm)
+                .map(|s| s.frame())
+                .unwrap_or(NSRect::new(
+                    NSPoint::new(0.0, 0.0),
+                    NSSize::new(1440.0, 900.0),
+                ));
+            // 优先锚在悬停按钮上方；超出屏幕则改到按钮下方
+            let mut sx = fr.origin.x + button_rect.origin.x
+                + (button_rect.size.width - tw) * 0.5;
+            let above_y = fr.origin.y + button_rect.origin.y + button_rect.size.height + 6.0;
+            let below_y = fr.origin.y + button_rect.origin.y - th - 6.0;
+            let mut sy = if above_y + th <= screen.origin.y + screen.size.height {
+                above_y
+            } else {
+                below_y
+            };
+            sx = sx.clamp(
+                screen.origin.x + 4.0,
+                (screen.origin.x + screen.size.width - tw - 4.0).max(screen.origin.x + 4.0),
+            );
+            sy = sy.clamp(
+                screen.origin.y + 4.0,
+                (screen.origin.y + screen.size.height - th - 4.0).max(screen.origin.y + 4.0),
+            );
+
+            let win = NSWindow::initWithContentRect_styleMask_backing_defer(
+                mtm.alloc(),
+                NSRect::new(NSPoint::new(sx, sy), NSSize::new(tw, th)),
+                NSWindowStyleMask::Borderless,
+                NSBackingStoreType::Buffered,
+                false,
+            );
+            win.setOpaque(false);
+            win.setHasShadow(true);
+            win.setIgnoresMouseEvents(true);
+            win.setLevel(NSStatusWindowLevel + 1);
+            win.setBackgroundColor(Some(&NSColor::colorWithWhite_alpha(0.12, 0.96)));
+            win
+        };
+
+        let label = unsafe {
+            let lbl = NSTextField::initWithFrame(
+                mtm.alloc(),
+                NSRect::new(
+                    NSPoint::new(TOOLTIP_PADDING, TOOLTIP_PADDING),
+                    NSSize::new(tw - TOOLTIP_PADDING * 2.0, th - TOOLTIP_PADDING * 2.0),
+                ),
+            );
+            lbl.setStringValue(&NSString::from_str(text));
+            lbl.setEditable(false);
+            lbl.setSelectable(false);
+            lbl.setBezeled(false);
+            lbl.setBordered(false);
+            lbl.setDrawsBackground(false);
+            lbl.setUsesSingleLineMode(false);
+            lbl.setMaximumNumberOfLines(0);
+            if let Some(cell) = lbl.cell() {
+                cell.setWraps(true);
+            }
+            lbl.setTextColor(Some(&NSColor::colorWithWhite_alpha(0.95, 1.0)));
+            lbl.setFont(Some(&objc2_app_kit::NSFont::systemFontOfSize(11.0)));
+            lbl.setAlignment(NSTextAlignment::Left);
+            lbl
+        };
+
+        let content = unsafe {
+            let v = NSView::initWithFrame(
+                mtm.alloc(),
+                NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(tw, th)),
+            );
+            v.addSubview(&label);
+            v
+        };
+        unsafe {
+            twin.setContentView(Some(&content));
+        }
+        twin.orderFrontRegardless();
+        self.tooltip_win = Some(twin);
+    }
+
+    fn hide_tooltip(&mut self) {
+        if self.current_tooltip.is_none() && self.tooltip_win.is_none() {
+            return;
+        }
+        self.current_tooltip = None;
+        if let Some(win) = self.tooltip_win.take() {
+            unsafe {
+                win.orderOut(None);
+            }
+        }
+    }
+
     /// 同步面板。`collapsed_expanded`：折叠模式下网格是否展开。
     pub fn sync(
         &mut self,
@@ -574,6 +758,54 @@ impl NativePanel {
             }
         }
         self.set_visible(visible);
+
+        // 与 rebuild_full / rebuild_collapsed 同一套坐标，供悬停命中
+        self.button_rects.clear();
+        self.button_tooltips.clear();
+        if !(panel_cfg.collapsed && !collapsed_expanded) {
+            let cols = panel_cfg.cols.max(1) as usize;
+            let rows = panel_cfg.rows.max(1) as usize;
+            let bw = panel_cfg.button_width as f64;
+            let bh = panel_cfg.button_height as f64;
+            let gap = panel_cfg.gap as f64;
+            let (vw, vh) = panel_cfg.viewport_size(collapsed_expanded);
+            let vw = vw as f64;
+            let vh = vh as f64;
+
+            for (i, btn) in buttons.iter().enumerate() {
+                let col = i % cols;
+                let row = i / cols;
+                if row >= rows {
+                    break;
+                }
+                let (x, y) = if panel_cfg.collapsed {
+                    let (full_w, _) = panel_cfg.panel_size();
+                    let lh = PanelConfig::collapsed_launcher_alloc().1 as f64;
+                    let grid_x = ((vw - full_w as f64) * 0.5).max(0.0);
+                    let grid_top = lh + gap;
+                    let grid_height = rows as f64 * bh + (rows.saturating_sub(1)) as f64 * gap;
+                    let grid_y = vh - grid_top - grid_height;
+                    let x = grid_x + col as f64 * (bw + gap);
+                    // 与 rebuild_collapsed 中 grid 内 y 一致，再加 container 原点
+                    let y_local = grid_height - (row as f64 + 1.0) * bh - row as f64 * gap;
+                    (x, grid_y + y_local)
+                } else {
+                    let header = PanelConfig::PANEL_HEADER_HEIGHT as f64;
+                    let pad = PanelConfig::PANEL_PADDING as f64;
+                    let x = pad + col as f64 * (bw + gap);
+                    let y_from_top = header + pad + row as f64 * (bh + gap);
+                    // 必须与 rebuild_full 一致：勿重复减 header/pad
+                    let y = vh - y_from_top - bh;
+                    (x, y)
+                };
+                self.button_rects
+                    .push(NSRect::new(NSPoint::new(x, y), NSSize::new(bw, bh)));
+                self.button_tooltips.push(btn.hover_tooltip());
+            }
+        } else {
+            self.hide_tooltip();
+        }
+
         dragged
     }
 
@@ -1085,13 +1317,34 @@ fn style_grid_button(
                     button.setImage(None);
                     button.setContentTintColor(None);
                 }
-                if !cfg.label.trim().is_empty() {
-                    button.setToolTip(Some(&NSString::from_str(&cfg.label)));
-                }
                 let _ = index; // IndexIcon 角标后续可加；先保证外框与图标正确
             }
         }
+
+        // 悬停快速显示脚本/动作内容（各显示模式一致）
+        if let Some(tip) = cfg.hover_tooltip() {
+            button.setToolTip(Some(&NSString::from_str(&tip)));
+        } else {
+            button.setToolTip(None);
+        }
     }
+}
+
+/// 缩短系统 tooltip 初始延迟，悬停即可较快看到脚本内容。
+fn reduce_initial_tooltip_delay() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        unsafe {
+            let defaults: *const AnyObject =
+                msg_send![objc2::class!(NSUserDefaults), standardUserDefaults];
+            let key = NSString::from_str("NSInitialToolTipDelay");
+            // 约 80ms；系统默认约 1s
+            let value: *const AnyObject =
+                msg_send![objc2::class!(NSNumber), numberWithInt: 80_i32];
+            let _: () = msg_send![defaults, setObject: value, forKey: &*key];
+        }
+    });
 }
 
 fn text_label(button: &ButtonConfig, index: usize) -> String {
@@ -1173,14 +1426,15 @@ fn fingerprint(panel: &PanelConfig, buttons: &[ButtonConfig], pinned: bool) -> S
     for (i, b) in buttons.iter().enumerate() {
         let _ = write!(
             &mut s,
-            "|{i}:{}:{}:{:?}:{}:{:?}:{:?}:{:?}",
+            "|{i}:{}:{}:{:?}:{}:{:?}:{:?}:{:?}:{}",
             b.enabled,
             b.label,
             b.icon,
             b.action.is_configured(),
             b.background_color,
             b.border_color,
-            b.icon_color
+            b.icon_color,
+            b.action.hover_fingerprint()
         );
     }
     s

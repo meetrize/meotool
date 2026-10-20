@@ -175,6 +175,9 @@ impl NativeState {
         if mask > 1 && (self.tick_seq % mask) != 0 {
             self.update_collapsed_hover();
             self.sync_panel_if_needed();
+            if let Some((mx, my)) = global_mouse_pos() {
+                self.panel.update_tooltip_on_move(self.mtm, mx, my);
+            }
             return TickOutcome::Continue;
         }
         self.poll_hotkeys();
@@ -197,6 +200,10 @@ impl NativeState {
         self.update_collapsed_hover();
         self.update_gesture_leave_hide();
         self.sync_panel_if_needed();
+        // sync 之后再命中，保证 button_rects 与布局一致
+        if let Some((mx, my)) = global_mouse_pos() {
+            self.panel.update_tooltip_on_move(self.mtm, mx, my);
+        }
         self.flush_pending_position_save(false);
         self.flush_pending_settings_save(false);
         self.maybe_idle_memory_purge();
