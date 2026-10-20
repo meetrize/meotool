@@ -42,6 +42,10 @@ const NAV_TITLES: &[&str] = &["通用", "外观", "快捷键", "配置档", "权
 const WINDOW_W: f64 = 840.0;
 const WINDOW_H: f64 = 680.0;
 const UNDO_DEPTH: usize = 20;
+const ROWS_COLS_MIN: f64 = 1.0;
+const ROWS_COLS_MAX: f64 = 9.0;
+const BTN_SIZE_MIN: f64 = 32.0;
+const BTN_SIZE_MAX: f64 = 128.0;
 
 #[derive(Default)]
 struct SettingsTargetIvars;
@@ -242,8 +246,10 @@ fn layout_settings_chrome_now() {
 }
 
 struct GlobalFields {
-    rows: Retained<NSTextField>,
-    cols: Retained<NSTextField>,
+    rows: Retained<NSSlider>,
+    rows_label: Retained<NSTextField>,
+    cols: Retained<NSSlider>,
+    cols_label: Retained<NSTextField>,
     display_mode: Retained<NSPopUpButton>,
     collapsed: Retained<NSSwitch>,
     collapsed_icon: Retained<NSTextField>,
@@ -258,8 +264,10 @@ struct GlobalFields {
 }
 
 struct AppearanceFields {
-    btn_w: Retained<NSTextField>,
-    btn_h: Retained<NSTextField>,
+    btn_w: Retained<NSSlider>,
+    btn_w_label: Retained<NSTextField>,
+    btn_h: Retained<NSSlider>,
+    btn_h_label: Retained<NSTextField>,
     bg: Retained<NSColorWell>,
     button_bg: Retained<NSColorWell>,
     letter_bg: Retained<NSColorWell>,
@@ -538,9 +546,9 @@ impl SettingsWindow {
                 }
                 SettingsAction::VisualChanged => {
                     self.sync_visual_into_draft();
-                    self.update_opacity_label();
-                    self.update_threshold_label();
+                    self.update_slider_labels();
                     self.rebuild_preview();
+                    // 行列/尺寸滑条拖动时尽快刷新面板
                     self.queue_apply(false);
                 }
                 SettingsAction::ProfileChanged => {
@@ -771,20 +779,6 @@ impl SettingsWindow {
         }
     }
 
-    fn confirm_shrink_slots(&self, profile_name: &str, drop_count: usize) -> bool {
-        let alert = NSAlert::new(self.mtm);
-        unsafe {
-            alert.setAlertStyle(NSAlertStyle::Warning);
-            alert.setMessageText(&NSString::from_str("缩小网格将丢弃按钮"));
-            alert.setInformativeText(&NSString::from_str(&format!(
-                "配置档「{profile_name}」缩小后将丢弃 {drop_count} 个已配置按钮。是否继续？"
-            )));
-            alert.addButtonWithTitle(&NSString::from_str("继续"));
-            alert.addButtonWithTitle(&NSString::from_str("取消"));
-            alert.runModal() == NSAlertFirstButtonReturn
-        }
-    }
-
     fn try_export(&mut self) {
         self.sync_all_into_draft();
         emit(NativeUiEvent::ExportConfig(self.draft.clone()));
@@ -857,15 +851,13 @@ impl SettingsWindow {
 
     fn load_from_draft(&mut self) {
         let g = &self.draft.global_panel.settings;
-        set_field(
-            &self.global.rows,
-            &g.rows.map(|v| v.to_string()).unwrap_or_else(|| "3".into()),
-        );
-        set_field(
-            &self.global.cols,
-            &g.cols.map(|v| v.to_string()).unwrap_or_else(|| "3".into()),
-        );
         unsafe {
+            self.global
+                .rows
+                .setDoubleValue(g.rows.unwrap_or(3).clamp(1, 9) as f64);
+            self.global
+                .cols
+                .setDoubleValue(g.cols.unwrap_or(3).clamp(1, 9) as f64);
             self.global.display_mode.selectItemAtIndex(match g.display_mode {
                 Some(DisplayMode::Icon) => 1,
                 Some(DisplayMode::IndexIcon) => 2,
@@ -886,8 +878,17 @@ impl SettingsWindow {
         let opacity = g.opacity.unwrap_or(0.85) as f64;
         unsafe {
             self.global.opacity.setDoubleValue(opacity);
+            self.appearance.btn_w.setDoubleValue(
+                g.button_width
+                    .unwrap_or(64.0)
+                    .clamp(BTN_SIZE_MIN as f32, BTN_SIZE_MAX as f32) as f64,
+            );
+            self.appearance.btn_h.setDoubleValue(
+                g.button_height
+                    .unwrap_or(64.0)
+                    .clamp(BTN_SIZE_MIN as f32, BTN_SIZE_MAX as f32) as f64,
+            );
         }
-        self.update_opacity_label();
         set_field(
             &self.global.gap,
             &g.gap
@@ -911,19 +912,7 @@ impl SettingsWindow {
             self.status_message.as_deref().unwrap_or(""),
         );
 
-        // Appearance global
-        set_field(
-            &self.appearance.btn_w,
-            &g.button_width
-                .map(|v| format!("{v:.0}"))
-                .unwrap_or_else(|| "64".into()),
-        );
-        set_field(
-            &self.appearance.btn_h,
-            &g.button_height
-                .map(|v| format!("{v:.0}"))
-                .unwrap_or_else(|| "64".into()),
-        );
+        // Appearance global theme
         load_theme_into_wells(&self.appearance, &g.theme, true);
         self.load_appearance_profile_fields();
 
@@ -942,7 +931,6 @@ impl SettingsWindow {
                 .threshold
                 .setDoubleValue(self.draft.gesture.drag_threshold_px as f64);
         }
-        self.update_threshold_label();
         set_switch(
             &self.gesture.dismiss_outside,
             self.draft.gesture.dismiss_on_outside_click,
@@ -951,6 +939,7 @@ impl SettingsWindow {
             &self.gesture.hide_after,
             self.draft.gesture.hide_after_button,
         );
+        self.update_slider_labels();
 
         self.load_hotkeys();
         self.reload_profile_popup();
@@ -980,14 +969,19 @@ impl SettingsWindow {
         }
     }
 
-    fn update_opacity_label(&self) {
-        let v = unsafe { self.global.opacity.doubleValue() };
-        set_field(&self.global.opacity_label, &format!("{v:.2}"));
-    }
-
-    fn update_threshold_label(&self) {
-        let v = unsafe { self.gesture.threshold.doubleValue() };
-        set_field(&self.gesture.threshold_label, &format!("{v:.0} px"));
+    fn update_slider_labels(&self) {
+        let rows = slider_int(&self.global.rows, 1, 9);
+        let cols = slider_int(&self.global.cols, 1, 9);
+        set_field(&self.global.rows_label, &rows.to_string());
+        set_field(&self.global.cols_label, &cols.to_string());
+        let opacity = unsafe { self.global.opacity.doubleValue() };
+        set_field(&self.global.opacity_label, &format!("{opacity:.2}"));
+        let thr = unsafe { self.gesture.threshold.doubleValue() };
+        set_field(&self.gesture.threshold_label, &format!("{thr:.0} px"));
+        let bw = slider_size(&self.appearance.btn_w);
+        let bh = slider_size(&self.appearance.btn_h);
+        set_field(&self.appearance.btn_w_label, &format!("{bw:.0}"));
+        set_field(&self.appearance.btn_h_label, &format!("{bh:.0}"));
     }
 
     fn reload_profile_popup(&self) {
@@ -1126,8 +1120,8 @@ impl SettingsWindow {
             }
         }
         let g = &self.draft.global_panel.settings;
-        let rows = g.rows.unwrap_or(3).max(1).min(6);
-        let cols = g.cols.unwrap_or(3).max(1).min(6);
+        let rows = g.rows.unwrap_or(3).max(1).min(9);
+        let cols = g.cols.unwrap_or(3).max(1).min(9);
         let theme = g.theme.resolve();
         let bg = ns_color_from_rgb(theme.button_bg);
         for _r in 0..rows {
@@ -1182,8 +1176,8 @@ impl SettingsWindow {
     }
 
     fn sync_visual_into_draft(&mut self) {
-        let rows: u8 = field_string(&self.global.rows).parse().unwrap_or(3);
-        let cols: u8 = field_string(&self.global.cols).parse().unwrap_or(3);
+        let rows = slider_int(&self.global.rows, 1, 9);
+        let cols = slider_int(&self.global.cols, 1, 9);
         let opacity = unsafe { self.global.opacity.doubleValue() }.clamp(0.05, 1.0) as f32;
         let gap: f32 = field_string(&self.global.gap).parse().unwrap_or(4.0);
         let poll: u64 = field_string(&self.global.poll_ms).parse().unwrap_or(500);
@@ -1192,8 +1186,8 @@ impl SettingsWindow {
         let pos_x: f32 = field_string(&self.global.pos_x).parse().unwrap_or(100.0);
         let pos_y: f32 = field_string(&self.global.pos_y).parse().unwrap_or(200.0);
 
-        self.draft.global_panel.settings.rows = Some(rows.clamp(1, 9));
-        self.draft.global_panel.settings.cols = Some(cols.clamp(1, 9));
+        self.draft.global_panel.settings.rows = Some(rows);
+        self.draft.global_panel.settings.cols = Some(cols);
         self.draft.global_panel.settings.opacity = Some(opacity);
         self.draft.global_panel.settings.gap = Some(gap);
         self.draft.global_panel.settings.collapsed = Some(switch_on(&self.global.collapsed));
@@ -1213,10 +1207,8 @@ impl SettingsWindow {
             ContextMode::Profile
         };
 
-        self.draft.global_panel.settings.button_width =
-            field_string(&self.appearance.btn_w).parse().ok();
-        self.draft.global_panel.settings.button_height =
-            field_string(&self.appearance.btn_h).parse().ok();
+        self.draft.global_panel.settings.button_width = Some(slider_size(&self.appearance.btn_w));
+        self.draft.global_panel.settings.button_height = Some(slider_size(&self.appearance.btn_h));
         store_theme_from_wells(&self.appearance, &mut self.draft.global_panel.settings.theme, true);
 
         self.draft.gesture.enabled = switch_on(&self.gesture.enabled);
@@ -1284,15 +1276,8 @@ impl SettingsWindow {
 
     fn collect_draft_validated(&mut self) -> Result<AppConfig, String> {
         self.sync_all_into_draft();
-        let rows = field_string(&self.global.rows)
-            .parse::<u8>()
-            .map_err(|_| "行数必须是 1–9 的整数".to_string())?;
-        let cols = field_string(&self.global.cols)
-            .parse::<u8>()
-            .map_err(|_| "列数必须是 1–9 的整数".to_string())?;
-        if !(1..=9).contains(&rows) || !(1..=9).contains(&cols) {
-            return Err("行/列必须在 1–9 之间".into());
-        }
+        let rows = slider_int(&self.global.rows, 1, 9);
+        let cols = slider_int(&self.global.cols, 1, 9);
         self.draft.global_panel.settings.rows = Some(rows);
         self.draft.global_panel.settings.cols = Some(cols);
 
@@ -1310,30 +1295,9 @@ impl SettingsWindow {
             }
         }
 
-        // 缩格前确认：将丢弃的非空按钮需用户同意
+        // 滑条实时缩格：空槽可裁掉；已配置按钮保留（面板只显示网格内，展开后仍可编辑）
         let global_rows = self.draft.global_panel.settings.rows;
         let global_cols = self.draft.global_panel.settings.cols;
-        let mut shrink_ops: Vec<(usize, String, usize)> = Vec::new();
-        for (idx, profile) in self.draft.profiles.iter().enumerate() {
-            let r = profile.panel.rows.or(global_rows).unwrap_or(3) as usize;
-            let c = profile.panel.cols.or(global_cols).unwrap_or(3) as usize;
-            let slots = r * c;
-            if profile.buttons.len() > slots {
-                let drop_count = profile.buttons[slots..]
-                    .iter()
-                    .filter(|b| button_is_configured(b))
-                    .count();
-                if drop_count > 0 {
-                    shrink_ops.push((idx, profile.name.clone(), drop_count));
-                }
-            }
-        }
-        for (_idx, name, drop_count) in &shrink_ops {
-            if !self.confirm_shrink_slots(name, *drop_count) {
-                return Err("已取消缩小网格".into());
-            }
-        }
-
         for profile in &mut self.draft.profiles {
             let r = profile.panel.rows.or(global_rows).unwrap_or(3) as usize;
             let c = profile.panel.cols.or(global_cols).unwrap_or(3) as usize;
@@ -1341,7 +1305,14 @@ impl SettingsWindow {
             while profile.buttons.len() < slots {
                 profile.buttons.push(empty_slot_button());
             }
-            profile.buttons.truncate(slots);
+            if profile.buttons.len() > slots {
+                let overflow_configured = profile.buttons[slots..]
+                    .iter()
+                    .any(button_is_configured);
+                if !overflow_configured {
+                    profile.buttons.truncate(slots);
+                }
+            }
         }
         self.draft.hotkeys = GlobalHotkeys {
             toggle_visibility: field_string(&self.hotkeys.labels[0]),
@@ -1360,8 +1331,22 @@ fn build_general_page(
 ) -> (Retained<NSStackView>, GlobalFields, GestureFields) {
     let page = v_stack(mtm);
     add_arranged(&page, &section_title(mtm, "面板"));
-    let (r1, rows) = labeled_field(mtm, "行数", 80.0);
-    let (r2, cols) = labeled_field(mtm, "列数", 80.0);
+    let (r1, rows, rows_label) = labeled_int_slider(
+        mtm,
+        target,
+        "行数",
+        ROWS_COLS_MIN,
+        ROWS_COLS_MAX,
+        "3",
+    );
+    let (r2, cols, cols_label) = labeled_int_slider(
+        mtm,
+        target,
+        "列数",
+        ROWS_COLS_MIN,
+        ROWS_COLS_MAX,
+        "3",
+    );
     let (r3, display_mode) = labeled_popup(
         mtm,
         "显示模式",
@@ -1377,29 +1362,8 @@ fn build_general_page(
     }
     add_arranged(&r5, &pick);
 
-    let opacity_row = h_stack(mtm);
-    let opacity_lab = unsafe { NSTextField::labelWithString(&NSString::from_str("透明度"), mtm) };
-    unsafe {
-        NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&[opacity_lab
-            .widthAnchor()
-            .constraintEqualToConstant(LABEL_W)]));
-    }
-    let opacity = unsafe {
-        let s = NSSlider::initWithFrame(
-            mtm.alloc(),
-            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(220.0, 24.0)),
-        );
-        s.setMinValue(0.2);
-        s.setMaxValue(1.0);
-        s.setContinuous(true);
-        s.setTarget(Some(target));
-        s.setAction(Some(objc2::sel!(fieldChanged:)));
-        s
-    };
-    let opacity_label = unsafe { NSTextField::labelWithString(&NSString::from_str("0.85"), mtm) };
-    add_arranged(&opacity_row, &opacity_lab);
-    add_arranged(&opacity_row, &opacity);
-    add_arranged(&opacity_row, &opacity_label);
+    let (opacity_row, opacity, opacity_label) =
+        labeled_float_slider(mtm, target, "透明度", 0.2, 1.0, "0.85");
 
     let (r6, gap) = labeled_field(mtm, "间距", 80.0);
     let (r7, pos_x) = labeled_field(mtm, "位置 X", 100.0);
@@ -1413,22 +1377,14 @@ fn build_general_page(
     );
     let help = help_label(
         mtm,
-        "按钮过滤：仅使用 default 配置档的布局与按钮；按钮 scope 才生效。",
+        "按钮过滤：仅使用 default 配置档的布局与按钮；按钮 scope 才生效。拖动行列滑条可实时改变面板网格。",
     );
     let status = unsafe { NSTextField::labelWithString(&NSString::from_str(""), mtm) };
     unsafe {
         status.setTextColor(Some(&NSColor::systemRedColor()));
     }
 
-    for control in [
-        &rows as &NSTextField,
-        &cols,
-        &collapsed_icon,
-        &gap,
-        &pos_x,
-        &pos_y,
-        &poll_ms,
-    ] {
+    for control in [&collapsed_icon, &gap, &pos_x, &pos_y, &poll_ms] {
         unsafe {
             control.setTarget(Some(target));
             control.setAction(Some(objc2::sel!(fieldChanged:)));
@@ -1455,7 +1411,9 @@ fn build_general_page(
         page,
         GlobalFields {
             rows,
+            rows_label,
             cols,
+            cols_label,
             display_mode,
             collapsed,
             collapsed_icon,
@@ -1483,10 +1441,28 @@ fn build_appearance_page(
     add_arranged(&page, &preview_host);
 
     add_arranged(&page, &section_title(mtm, "全局外观"));
-    let (r1, btn_w) = labeled_field(mtm, "按钮宽度", 80.0);
-    let (r2, btn_h) = labeled_field(mtm, "按钮高度", 80.0);
+    let (r1, btn_w, btn_w_label) = labeled_size_slider(
+        mtm,
+        target,
+        "按钮宽度",
+        BTN_SIZE_MIN,
+        BTN_SIZE_MAX,
+        "64",
+    );
+    let (r2, btn_h, btn_h_label) = labeled_size_slider(
+        mtm,
+        target,
+        "按钮高度",
+        BTN_SIZE_MIN,
+        BTN_SIZE_MAX,
+        "64",
+    );
     add_arranged(&page, &r1);
     add_arranged(&page, &r2);
+    add_arranged(
+        &page,
+        &help_label(mtm, "拖动滑条可实时改变面板按钮大小（32–128）。"),
+    );
 
     let (bg_row, bg) = color_row(mtm, "面板背景", target);
     let (button_bg_row, button_bg) = color_row(mtm, "按钮背景", target);
@@ -1546,7 +1522,7 @@ fn build_appearance_page(
     );
 
     for f in [
-        &btn_w, &btn_h, &letter_size, &letter_font, &win_border_w, &btn_border_w, &p_btn_w, &p_btn_h,
+        &letter_size, &letter_font, &win_border_w, &btn_border_w, &p_btn_w, &p_btn_h,
     ] {
         unsafe {
             f.setTarget(Some(target));
@@ -1564,7 +1540,9 @@ fn build_appearance_page(
         page,
         AppearanceFields {
             btn_w,
+            btn_w_label,
             btn_h,
+            btn_h_label,
             bg,
             button_bg,
             letter_bg,
@@ -1847,6 +1825,111 @@ fn build_perms_page(
             path_label,
         },
     )
+}
+
+/// 整数刻度滑条（行/列）：右侧显示当前值。
+fn labeled_int_slider(
+    mtm: MainThreadMarker,
+    target: &SettingsTarget,
+    label: &str,
+    min: f64,
+    max: f64,
+    initial: &str,
+) -> (Retained<NSStackView>, Retained<NSSlider>, Retained<NSTextField>) {
+    let row = h_stack(mtm);
+    let lab = unsafe { NSTextField::labelWithString(&NSString::from_str(label), mtm) };
+    unsafe {
+        NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&[lab
+            .widthAnchor()
+            .constraintEqualToConstant(LABEL_W)]));
+    }
+    let ticks = ((max - min).round() as isize) + 1;
+    let slider = unsafe {
+        let s = NSSlider::initWithFrame(
+            mtm.alloc(),
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(220.0, 24.0)),
+        );
+        s.setMinValue(min);
+        s.setMaxValue(max);
+        s.setNumberOfTickMarks(ticks);
+        s.setAllowsTickMarkValuesOnly(true);
+        s.setContinuous(true);
+        s.setTarget(Some(target));
+        s.setAction(Some(objc2::sel!(fieldChanged:)));
+        s
+    };
+    let value = unsafe { NSTextField::labelWithString(&NSString::from_str(initial), mtm) };
+    unsafe {
+        NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&[value
+            .widthAnchor()
+            .constraintEqualToConstant(36.0)]));
+    }
+    add_arranged(&row, &lab);
+    add_arranged(&row, &slider);
+    add_arranged(&row, &value);
+    (row, slider, value)
+}
+
+/// 浮点滑条（透明度等）。
+fn labeled_float_slider(
+    mtm: MainThreadMarker,
+    target: &SettingsTarget,
+    label: &str,
+    min: f64,
+    max: f64,
+    initial: &str,
+) -> (Retained<NSStackView>, Retained<NSSlider>, Retained<NSTextField>) {
+    let row = h_stack(mtm);
+    let lab = unsafe { NSTextField::labelWithString(&NSString::from_str(label), mtm) };
+    unsafe {
+        NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&[lab
+            .widthAnchor()
+            .constraintEqualToConstant(LABEL_W)]));
+    }
+    let slider = unsafe {
+        let s = NSSlider::initWithFrame(
+            mtm.alloc(),
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(220.0, 24.0)),
+        );
+        s.setMinValue(min);
+        s.setMaxValue(max);
+        s.setContinuous(true);
+        s.setTarget(Some(target));
+        s.setAction(Some(objc2::sel!(fieldChanged:)));
+        s
+    };
+    let value = unsafe { NSTextField::labelWithString(&NSString::from_str(initial), mtm) };
+    unsafe {
+        NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&[value
+            .widthAnchor()
+            .constraintEqualToConstant(48.0)]));
+    }
+    add_arranged(&row, &lab);
+    add_arranged(&row, &slider);
+    add_arranged(&row, &value);
+    (row, slider, value)
+}
+
+/// 按钮尺寸滑条（取整显示）。
+fn labeled_size_slider(
+    mtm: MainThreadMarker,
+    target: &SettingsTarget,
+    label: &str,
+    min: f64,
+    max: f64,
+    initial: &str,
+) -> (Retained<NSStackView>, Retained<NSSlider>, Retained<NSTextField>) {
+    labeled_float_slider(mtm, target, label, min, max, initial)
+}
+
+fn slider_int(slider: &NSSlider, min: u8, max: u8) -> u8 {
+    let v = unsafe { slider.doubleValue() }.round() as i32;
+    v.clamp(min as i32, max as i32) as u8
+}
+
+fn slider_size(slider: &NSSlider) -> f32 {
+    let v = unsafe { slider.doubleValue() }.round() as f32;
+    v.clamp(BTN_SIZE_MIN as f32, BTN_SIZE_MAX as f32)
 }
 
 fn color_row(
