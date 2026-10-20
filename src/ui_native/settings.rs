@@ -46,6 +46,10 @@ const ROWS_COLS_MIN: f64 = 1.0;
 const ROWS_COLS_MAX: f64 = 9.0;
 const BTN_SIZE_MIN: f64 = 32.0;
 const BTN_SIZE_MAX: f64 = 128.0;
+const GAP_MIN: f64 = 0.0;
+const GAP_MAX: f64 = 32.0;
+const BORDER_W_MIN: f64 = 0.0;
+const BORDER_W_MAX: f64 = 8.0;
 
 #[derive(Default)]
 struct SettingsTargetIvars;
@@ -255,7 +259,6 @@ struct GlobalFields {
     collapsed_icon: Retained<NSTextField>,
     opacity: Retained<NSSlider>,
     opacity_label: Retained<NSTextField>,
-    gap: Retained<NSTextField>,
     pos_x: Retained<NSTextField>,
     pos_y: Retained<NSTextField>,
     poll_ms: Retained<NSTextField>,
@@ -268,17 +271,19 @@ struct AppearanceFields {
     btn_w_label: Retained<NSTextField>,
     btn_h: Retained<NSSlider>,
     btn_h_label: Retained<NSTextField>,
+    gap_x: Retained<NSSlider>,
+    gap_x_label: Retained<NSTextField>,
+    gap_y: Retained<NSSlider>,
+    gap_y_label: Retained<NSTextField>,
     bg: Retained<NSColorWell>,
     button_bg: Retained<NSColorWell>,
     letter_bg: Retained<NSColorWell>,
     letter_color: Retained<NSColorWell>,
     letter_size: Retained<NSTextField>,
     letter_font: Retained<NSTextField>,
-    win_border_on: Retained<NSSwitch>,
-    win_border_w: Retained<NSTextField>,
-    win_border_color: Retained<NSColorWell>,
     btn_border_on: Retained<NSSwitch>,
-    btn_border_w: Retained<NSTextField>,
+    btn_border_w: Retained<NSSlider>,
+    btn_border_w_label: Retained<NSTextField>,
     btn_border_color: Retained<NSColorWell>,
     profile_popup: Retained<NSPopUpButton>,
     p_btn_w: Retained<NSTextField>,
@@ -888,13 +893,17 @@ impl SettingsWindow {
                     .unwrap_or(64.0)
                     .clamp(BTN_SIZE_MIN as f32, BTN_SIZE_MAX as f32) as f64,
             );
+            self.appearance.gap_x.setDoubleValue(
+                g.gap_x
+                    .unwrap_or(4.0)
+                    .clamp(GAP_MIN as f32, GAP_MAX as f32) as f64,
+            );
+            self.appearance.gap_y.setDoubleValue(
+                g.gap_y
+                    .unwrap_or(4.0)
+                    .clamp(GAP_MIN as f32, GAP_MAX as f32) as f64,
+            );
         }
-        set_field(
-            &self.global.gap,
-            &g.gap
-                .map(|v| format!("{v:.0}"))
-                .unwrap_or_else(|| "4".into()),
-        );
         set_field(
             &self.global.pos_x,
             &format!("{:.0}", self.draft.global_panel.position.x),
@@ -982,6 +991,12 @@ impl SettingsWindow {
         let bh = slider_size(&self.appearance.btn_h);
         set_field(&self.appearance.btn_w_label, &format!("{bw:.0}"));
         set_field(&self.appearance.btn_h_label, &format!("{bh:.0}"));
+        let gx = slider_gap(&self.appearance.gap_x);
+        let gy = slider_gap(&self.appearance.gap_y);
+        set_field(&self.appearance.gap_x_label, &format!("{gx:.0}"));
+        set_field(&self.appearance.gap_y_label, &format!("{gy:.0}"));
+        let bbw = slider_border_w(&self.appearance.btn_border_w);
+        set_field(&self.appearance.btn_border_w_label, &format!("{bbw:.1}"));
     }
 
     fn reload_profile_popup(&self) {
@@ -1135,8 +1150,12 @@ impl SettingsWindow {
                     b.setBoxType(NSBoxType::Custom);
                     b.setTitlePosition(objc2_app_kit::NSTitlePosition::NoTitle);
                     b.setFillColor(&bg);
-                    b.setBorderWidth(1.0);
-                    b.setBorderColor(&ns_color_from_rgb(theme.button_border_color));
+                    if theme.button_border_enabled && theme.button_border_width > 0.0 {
+                        b.setBorderWidth(theme.button_border_width as f64);
+                        b.setBorderColor(&ns_color_from_rgb(theme.button_border_color));
+                    } else {
+                        b.setBorderWidth(0.0);
+                    }
                     NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&[
                         b.widthAnchor().constraintEqualToConstant(28.0),
                         b.heightAnchor().constraintEqualToConstant(28.0),
@@ -1179,7 +1198,6 @@ impl SettingsWindow {
         let rows = slider_int(&self.global.rows, 1, 9);
         let cols = slider_int(&self.global.cols, 1, 9);
         let opacity = unsafe { self.global.opacity.doubleValue() }.clamp(0.05, 1.0) as f32;
-        let gap: f32 = field_string(&self.global.gap).parse().unwrap_or(4.0);
         let poll: u64 = field_string(&self.global.poll_ms).parse().unwrap_or(500);
         let mode_idx = unsafe { self.global.display_mode.indexOfSelectedItem() };
         let ctx_idx = unsafe { self.global.context_mode.indexOfSelectedItem() };
@@ -1189,7 +1207,6 @@ impl SettingsWindow {
         self.draft.global_panel.settings.rows = Some(rows);
         self.draft.global_panel.settings.cols = Some(cols);
         self.draft.global_panel.settings.opacity = Some(opacity);
-        self.draft.global_panel.settings.gap = Some(gap);
         self.draft.global_panel.settings.collapsed = Some(switch_on(&self.global.collapsed));
         self.draft.global_panel.settings.collapsed_icon =
             Some(field_string(&self.global.collapsed_icon));
@@ -1209,6 +1226,8 @@ impl SettingsWindow {
 
         self.draft.global_panel.settings.button_width = Some(slider_size(&self.appearance.btn_w));
         self.draft.global_panel.settings.button_height = Some(slider_size(&self.appearance.btn_h));
+        self.draft.global_panel.settings.gap_x = Some(slider_gap(&self.appearance.gap_x));
+        self.draft.global_panel.settings.gap_y = Some(slider_gap(&self.appearance.gap_y));
         store_theme_from_wells(&self.appearance, &mut self.draft.global_panel.settings.theme, true);
 
         self.draft.gesture.enabled = switch_on(&self.gesture.enabled);
@@ -1365,7 +1384,6 @@ fn build_general_page(
     let (opacity_row, opacity, opacity_label) =
         labeled_float_slider(mtm, target, "透明度", 0.2, 1.0, "0.85");
 
-    let (r6, gap) = labeled_field(mtm, "间距", 80.0);
     let (r7, pos_x) = labeled_field(mtm, "位置 X", 100.0);
     let (r8, pos_y) = labeled_field(mtm, "位置 Y", 100.0);
     let (r9, poll_ms) = labeled_field(mtm, "窗口轮询 ms", 100.0);
@@ -1384,7 +1402,7 @@ fn build_general_page(
         status.setTextColor(Some(&NSColor::systemRedColor()));
     }
 
-    for control in [&collapsed_icon, &gap, &pos_x, &pos_y, &poll_ms] {
+    for control in [&collapsed_icon, &pos_x, &pos_y, &poll_ms] {
         unsafe {
             control.setTarget(Some(target));
             control.setAction(Some(objc2::sel!(fieldChanged:)));
@@ -1399,7 +1417,7 @@ fn build_general_page(
         context_mode.setAction(Some(objc2::sel!(fieldChanged:)));
     }
 
-    for row in [&r1, &r2, &r3, &r4, &r5, &opacity_row, &r6, &r7, &r8, &r9, &r10] {
+    for row in [&r1, &r2, &r3, &r4, &r5, &opacity_row, &r7, &r8, &r9, &r10] {
         add_arranged(&page, row);
     }
     add_arranged(&page, &help);
@@ -1419,7 +1437,6 @@ fn build_general_page(
             collapsed_icon,
             opacity,
             opacity_label,
-            gap,
             pos_x,
             pos_y,
             poll_ms,
@@ -1457,11 +1474,20 @@ fn build_appearance_page(
         BTN_SIZE_MAX,
         "64",
     );
+    let (r_gx, gap_x, gap_x_label) =
+        labeled_size_slider(mtm, target, "左右间距", GAP_MIN, GAP_MAX, "4");
+    let (r_gy, gap_y, gap_y_label) =
+        labeled_size_slider(mtm, target, "上下间距", GAP_MIN, GAP_MAX, "4");
     add_arranged(&page, &r1);
     add_arranged(&page, &r2);
+    add_arranged(&page, &r_gx);
+    add_arranged(&page, &r_gy);
     add_arranged(
         &page,
-        &help_label(mtm, "拖动滑条可实时改变面板按钮大小（32–128）。"),
+        &help_label(
+            mtm,
+            "拖动滑条可实时改变按钮大小（32–128）与间距（0–32）。",
+        ),
     );
 
     let (bg_row, bg) = color_row(mtm, "面板背景", target);
@@ -1482,20 +1508,11 @@ fn build_appearance_page(
         &help_label(mtm, "留空则使用系统默认中文字体；可填 .ttf / .ttc 绝对路径。"),
     );
 
-    let (r5, win_border_on) = labeled_switch(mtm, "窗口边框");
-    let (r6, win_border_w) = labeled_field(mtm, "边框粗细", 80.0);
-    let (win_border_color_row, win_border_color) = color_row(mtm, "边框颜色", target);
-    let (r7, btn_border_on) = labeled_switch(mtm, "按钮边框");
-    let (r8, btn_border_w) = labeled_field(mtm, "边框粗细", 80.0);
+    let (r5, btn_border_on) = labeled_switch(mtm, "按钮边框");
+    let (r6, btn_border_w, btn_border_w_label) =
+        labeled_size_slider(mtm, target, "边框粗细", BORDER_W_MIN, BORDER_W_MAX, "1.0");
     let (btn_border_color_row, btn_border_color) = color_row(mtm, "边框颜色", target);
-    for row in [
-        &r5,
-        &r6,
-        &win_border_color_row,
-        &r7,
-        &r8,
-        &btn_border_color_row,
-    ] {
+    for row in [&r5, &r6, &btn_border_color_row] {
         add_arranged(&page, row);
     }
 
@@ -1521,19 +1538,15 @@ fn build_appearance_page(
         &help_label(mtm, "留空表示继承全局；填写后仅对该配置档生效。"),
     );
 
-    for f in [
-        &letter_size, &letter_font, &win_border_w, &btn_border_w, &p_btn_w, &p_btn_h,
-    ] {
+    for f in [&letter_size, &letter_font, &p_btn_w, &p_btn_h] {
         unsafe {
             f.setTarget(Some(target));
             f.setAction(Some(objc2::sel!(fieldChanged:)));
         }
     }
-    for sw in [&win_border_on, &btn_border_on] {
-        unsafe {
-            sw.setTarget(Some(target));
-            sw.setAction(Some(objc2::sel!(fieldChanged:)));
-        }
+    unsafe {
+        btn_border_on.setTarget(Some(target));
+        btn_border_on.setAction(Some(objc2::sel!(fieldChanged:)));
     }
 
     (
@@ -1543,17 +1556,19 @@ fn build_appearance_page(
             btn_w_label,
             btn_h,
             btn_h_label,
+            gap_x,
+            gap_x_label,
+            gap_y,
+            gap_y_label,
             bg,
             button_bg,
             letter_bg,
             letter_color,
             letter_size,
             letter_font,
-            win_border_on,
-            win_border_w,
-            win_border_color,
             btn_border_on,
             btn_border_w,
+            btn_border_w_label,
             btn_border_color,
             profile_popup,
             p_btn_w,
@@ -1932,6 +1947,16 @@ fn slider_size(slider: &NSSlider) -> f32 {
     v.clamp(BTN_SIZE_MIN as f32, BTN_SIZE_MAX as f32)
 }
 
+fn slider_gap(slider: &NSSlider) -> f32 {
+    let v = unsafe { slider.doubleValue() }.round() as f32;
+    v.clamp(GAP_MIN as f32, GAP_MAX as f32)
+}
+
+fn slider_border_w(slider: &NSSlider) -> f32 {
+    let v = (unsafe { slider.doubleValue() } * 10.0).round() / 10.0;
+    (v as f32).clamp(BORDER_W_MIN as f32, BORDER_W_MAX as f32)
+}
+
 fn color_row(
     mtm: MainThreadMarker,
     label: &str,
@@ -1975,31 +2000,17 @@ fn load_theme_into_wells(fields: &AppearanceFields, theme: &ThemeSettings, _glob
         theme.letter_font.as_deref().unwrap_or(""),
     );
     set_switch(
-        &fields.win_border_on,
-        theme.window_border_enabled.unwrap_or(false),
-    );
-    set_field(
-        &fields.win_border_w,
-        &theme
-            .window_border_width
-            .map(|v| format!("{v:.1}"))
-            .unwrap_or_else(|| "1".into()),
-    );
-    set_well_color(
-        &fields.win_border_color,
-        theme.window_border_color.as_deref(),
-    );
-    set_switch(
         &fields.btn_border_on,
-        theme.button_border_enabled.unwrap_or(true),
+        theme.button_border_enabled.unwrap_or(false),
     );
-    set_field(
-        &fields.btn_border_w,
-        &theme
-            .button_border_width
-            .map(|v| format!("{v:.1}"))
-            .unwrap_or_else(|| "1".into()),
-    );
+    unsafe {
+        fields.btn_border_w.setDoubleValue(
+            theme
+                .button_border_width
+                .unwrap_or(1.0)
+                .clamp(BORDER_W_MIN as f32, BORDER_W_MAX as f32) as f64,
+        );
+    }
     set_well_color(
         &fields.btn_border_color,
         theme.button_border_color.as_deref(),
@@ -2018,11 +2029,8 @@ fn store_theme_from_wells(fields: &AppearanceFields, theme: &mut ThemeSettings, 
     } else {
         Some(font)
     };
-    theme.window_border_enabled = Some(switch_on(&fields.win_border_on));
-    theme.window_border_width = field_string(&fields.win_border_w).parse().ok();
-    theme.window_border_color = Some(well_to_string(&fields.win_border_color));
     theme.button_border_enabled = Some(switch_on(&fields.btn_border_on));
-    theme.button_border_width = field_string(&fields.btn_border_w).parse().ok();
+    theme.button_border_width = Some(slider_border_w(&fields.btn_border_w));
     theme.button_border_color = Some(well_to_string(&fields.btn_border_color));
 }
 

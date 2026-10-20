@@ -119,7 +119,13 @@ pub struct PanelSettingsFile {
     pub button_size: Option<f32>,
     pub button_width: Option<f32>,
     pub button_height: Option<f32>,
+    /// 兼容旧配置：同时作为左右/上下间距默认值
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gap: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap_x: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap_y: Option<f32>,
     pub collapsed_icon: Option<String>,
     pub position: Option<PositionSettings>,
     #[serde(default)]
@@ -400,7 +406,8 @@ impl PanelSettingsFile {
             opacity: self.opacity,
             button_width: self.button_width.or(self.button_size),
             button_height: self.button_height.or(self.button_size),
-            gap: self.gap,
+            gap_x: self.gap_x.or(self.gap),
+            gap_y: self.gap_y.or(self.gap),
             collapsed_icon: self.collapsed_icon.clone(),
             theme: self.theme.to_theme_settings(),
         }

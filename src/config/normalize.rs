@@ -39,8 +39,11 @@ fn normalize_panel_settings(settings: &mut PanelSettings) {
     if let Some(opacity) = settings.opacity.as_mut() {
         *opacity = (*opacity).clamp(0.05, 1.0);
     }
-    if let Some(gap) = settings.gap.as_mut() {
-        *gap = (*gap).max(0.0);
+    if let Some(gap) = settings.gap_x.as_mut() {
+        *gap = (*gap).clamp(0.0, 32.0);
+    }
+    if let Some(gap) = settings.gap_y.as_mut() {
+        *gap = (*gap).clamp(0.0, 32.0);
     }
     normalize_theme(&mut settings.theme);
 }
@@ -126,7 +129,8 @@ mod tests {
         config.global_panel.settings.rows = Some(0);
         config.global_panel.settings.cols = Some(99);
         config.global_panel.settings.opacity = Some(0.01);
-        config.global_panel.settings.gap = Some(-3.0);
+        config.global_panel.settings.gap_x = Some(-3.0);
+        config.global_panel.settings.gap_y = Some(99.0);
         config.global_panel.settings.theme.letter_font = Some("".into());
         config.profiles[0].panel.rows = Some(2);
         config.profiles[0].panel.cols = Some(2);
@@ -143,7 +147,8 @@ mod tests {
         assert_eq!(config.global_panel.settings.rows, Some(1));
         assert_eq!(config.global_panel.settings.cols, Some(9));
         assert_eq!(config.global_panel.settings.opacity, Some(0.05));
-        assert_eq!(config.global_panel.settings.gap, Some(0.0));
+        assert_eq!(config.global_panel.settings.gap_x, Some(0.0));
+        assert_eq!(config.global_panel.settings.gap_y, Some(32.0));
         assert_eq!(config.poll_interval_ms, 50);
         assert_eq!(config.profiles[0].buttons.len(), 4);
     }

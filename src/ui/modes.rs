@@ -78,13 +78,14 @@ fn build_button_frame(theme: &Theme, button: &ButtonConfig, opacity: f32) -> egu
 
     let mut frame = egui::Frame::none().fill(bg).rounding(theme.corner_radius);
 
-    let border_color = button
+    let per_button_border = button
         .border_color
         .as_deref()
         .and_then(parse_color)
-        .map(crate::ui::egui_color::to_egui)
-        .unwrap_or(theme.button_border_color);
-    let border_override = button.border_color.is_some();
+        .filter(|c| c.a > 0)
+        .map(crate::ui::egui_color::to_egui);
+    let border_color = per_button_border.unwrap_or(theme.button_border_color);
+    let border_override = per_button_border.is_some();
     let border_enabled = theme.button_border_enabled || border_override;
     let border_width = if border_override && theme.button_border_width <= 0.0 {
         1.0

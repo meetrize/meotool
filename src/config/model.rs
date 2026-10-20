@@ -43,7 +43,7 @@ impl Default for UiStyle {
             window_border_enabled: false,
             window_border_width: 1.0,
             window_border_color: RgbColor::rgba(255, 255, 255, 38),
-            button_border_enabled: true,
+            button_border_enabled: false,
             button_border_width: 1.0,
             button_border_color: RgbColor::rgba(255, 255, 255, 38),
         }
@@ -59,7 +59,10 @@ pub struct PanelConfig {
     pub opacity: f32,
     pub button_width: f32,
     pub button_height: f32,
-    pub gap: f32,
+    /// 按钮左右间距（列间距）
+    pub gap_x: f32,
+    /// 按钮上下间距（行间距）
+    pub gap_y: f32,
     pub position: Position,
     pub collapsed_icon: Option<String>,
     pub buttons: Vec<ButtonConfig>,
@@ -462,21 +465,41 @@ fn truncate_hover_text(text: &str, max_chars: usize) -> String {
 }
 
 impl ButtonConfig {
-    /// 鼠标悬停时展示的文案：优先脚本/动作内容，无动作时回退到标签
+    /// 鼠标悬停时展示的文案：标签 + 快捷键 + 脚本/动作内容
     pub fn hover_tooltip(&self) -> Option<String> {
         let label = self.label.trim();
         let body = self.action.hover_body();
-        match (label.is_empty(), body) {
-            (true, None) => None,
-            (false, None) => Some(label.to_string()),
-            (true, Some(body)) => Some(body),
-            (false, Some(body)) => {
-                if body.lines().next() == Some(label) {
-                    Some(body)
-                } else {
-                    Some(format!("{label}\n\n{body}"))
-                }
+        let hotkey = self
+            .hotkey
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("快捷键 {s}"));
+
+        let mut parts: Vec<String> = Vec::new();
+        if !label.is_empty() {
+            parts.push(label.to_string());
+        }
+        if let Some(hk) = hotkey {
+            parts.push(hk);
+        }
+        if let Some(body) = body {
+            // 标签已单独展示时，避免正文首行重复标签
+            let body = if !label.is_empty() && body.lines().next() == Some(label) {
+                body.lines().skip(1).collect::<Vec<_>>().join("\n")
+            } else {
+                body
+            };
+            let body = body.trim();
+            if !body.is_empty() {
+                parts.push(body.to_string());
             }
+        }
+
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n\n"))
         }
     }
 }
@@ -503,8 +526,8 @@ impl PanelConfig {
     pub const PANEL_PADDING: f32 = 2.0;
 
     pub fn panel_size(&self) -> (f32, f32) {
-        let w = self.cols as f32 * self.button_width + (self.cols as f32 - 1.0) * self.gap;
-        let h = self.rows as f32 * self.button_height + (self.rows as f32 - 1.0) * self.gap;
+        let w = self.cols as f32 * self.button_width + (self.cols as f32 - 1.0) * self.gap_x;
+        let h = self.rows as f32 * self.button_height + (self.rows as f32 - 1.0) * self.gap_y;
         (w, h)
     }
 
@@ -521,10 +544,9 @@ impl PanelConfig {
         let pad = Self::PANEL_PADDING * 2.0;
         let (full_w, full_h) = self.panel_size();
         let (launcher_w, launcher_h) = Self::collapsed_launcher_alloc();
-        let gap = self.gap;
         (
             launcher_w.max(full_w) + pad,
-            launcher_h + gap + full_h + pad,
+            launcher_h + self.gap_y + full_h + pad,
         )
     }
 
@@ -653,7 +675,8 @@ mod tests {
             opacity: 1.0,
             button_width: 64.0,
             button_height: 64.0,
-            gap: 4.0,
+            gap_x: 4.0,
+            gap_y: 4.0,
             position: Position { x: 0.0, y: 0.0 },
             collapsed_icon: None,
             buttons: vec![
@@ -689,10 +712,11 @@ mod tests {
             border_color: None,
             icon_color: None,
             scope: ButtonScope::Always,
-            hotkey: None,
+            hotkey: Some("Cmd+Shift+1".into()),
         };
         let tip = btn.hover_tooltip().expect("tooltip");
         assert!(tip.contains("保存"));
+        assert!(tip.contains("快捷键 Cmd+Shift+1"));
         assert!(tip.contains("快捷键 Cmd+S"));
         assert!(tip.contains("等待 100"));
     }

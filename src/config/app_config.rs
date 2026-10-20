@@ -99,7 +99,10 @@ pub struct PanelSettings {
     pub opacity: Option<f32>,
     pub button_width: Option<f32>,
     pub button_height: Option<f32>,
-    pub gap: Option<f32>,
+    /// 按钮左右间距
+    pub gap_x: Option<f32>,
+    /// 按钮上下间距
+    pub gap_y: Option<f32>,
     pub collapsed_icon: Option<String>,
     pub theme: ThemeSettings,
 }
@@ -249,7 +252,8 @@ impl AppConfig {
             opacity: p.opacity.or(g.opacity).unwrap_or(0.85),
             button_width: resolve_button_width(p, g),
             button_height: resolve_button_height(p, g),
-            gap: p.gap.or(g.gap).unwrap_or(4.0),
+            gap_x: p.gap_x.or(g.gap_x).unwrap_or(4.0),
+            gap_y: p.gap_y.or(g.gap_y).unwrap_or(4.0),
             position: self.global_panel.position.clone(),
             collapsed_icon: p
                 .collapsed_icon

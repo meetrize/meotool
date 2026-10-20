@@ -103,10 +103,9 @@ pub fn show_collapsed(
     let mut expand_to_full = false;
 
     let (full_w, full_h) = panel.panel_size();
-    let gap = panel.gap;
     // 布局与窗口始终占满展开尺寸；展开只切换绘制，尺寸不变 → 图标零闪动
     let content_w = LAUNCHER_ALLOC.x.max(full_w);
-    let content_h = LAUNCHER_ALLOC.y + gap + full_h;
+    let content_h = LAUNCHER_ALLOC.y + panel.gap_y + full_h;
 
     let origin = ui.available_rect_before_wrap().min;
     let launcher_rect = egui::Rect::from_min_size(
@@ -166,7 +165,7 @@ pub fn show_collapsed(
     let grid_rect = egui::Rect::from_min_size(
         egui::pos2(
             rect.min.x + (content_w - full_w) * 0.5,
-            rect.min.y + LAUNCHER_ALLOC.y + gap,
+            rect.min.y + LAUNCHER_ALLOC.y + panel.gap_y,
         ),
         Vec2::new(full_w, full_h),
     );
@@ -299,7 +298,7 @@ fn paint_grid(
     let cols = panel.cols as usize;
 
     egui::Grid::new("collapsed_grid_inner")
-        .spacing(egui::vec2(panel.gap, panel.gap))
+        .spacing(egui::vec2(panel.gap_x, panel.gap_y))
         .show(ui, |ui| {
             for (index, button) in buttons.iter().enumerate() {
                 if index > 0 && index % cols == 0 {

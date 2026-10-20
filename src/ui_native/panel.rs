@@ -317,7 +317,8 @@ impl NativePanel {
         unsafe {
             panel.setReleasedWhenClosed(false);
             panel.setOpaque(false);
-            panel.setHasShadow(true);
+            // 透明面板默认关阴影，避免按钮外缘出现系统灰色光晕
+            panel.setHasShadow(false);
             panel.setMovableByWindowBackground(true);
             panel.setFloatingPanel(true);
             panel.setBecomesKeyOnlyIfNeeded(true);
@@ -604,7 +605,8 @@ impl NativePanel {
             win.setHasShadow(true);
             win.setIgnoresMouseEvents(true);
             win.setLevel(NSStatusWindowLevel + 1);
-            win.setBackgroundColor(Some(&NSColor::colorWithWhite_alpha(0.12, 0.96)));
+            // 约 60% 不透明度，避免挡住下方内容
+            win.setBackgroundColor(Some(&NSColor::colorWithWhite_alpha(0.12, 0.60)));
             win
         };
 
@@ -750,11 +752,13 @@ impl NativePanel {
                 self.panel.setHasShadow(false);
             }
         } else {
+            // 面板背景透明时若开窗口阴影，AppKit 会给每个不透明按钮描一圈灰色光晕
+            let bg = panel_cfg.ui_style.background;
+            let solid_panel = bg.a > 200;
             unsafe {
-                self.panel
-                    .setBackgroundColor(Some(&ns_color(panel_cfg.ui_style.background)));
-                self.panel.setOpaque(panel_cfg.ui_style.background.a > 200);
-                self.panel.setHasShadow(true);
+                self.panel.setBackgroundColor(Some(&ns_color(bg)));
+                self.panel.setOpaque(solid_panel);
+                self.panel.setHasShadow(solid_panel);
             }
         }
         self.set_visible(visible);
@@ -767,7 +771,8 @@ impl NativePanel {
             let rows = panel_cfg.rows.max(1) as usize;
             let bw = panel_cfg.button_width as f64;
             let bh = panel_cfg.button_height as f64;
-            let gap = panel_cfg.gap as f64;
+            let gap_x = panel_cfg.gap_x as f64;
+            let gap_y = panel_cfg.gap_y as f64;
             let (vw, vh) = panel_cfg.viewport_size(collapsed_expanded);
             let vw = vw as f64;
             let vh = vh as f64;
@@ -782,18 +787,18 @@ impl NativePanel {
                     let (full_w, _) = panel_cfg.panel_size();
                     let lh = PanelConfig::collapsed_launcher_alloc().1 as f64;
                     let grid_x = ((vw - full_w as f64) * 0.5).max(0.0);
-                    let grid_top = lh + gap;
-                    let grid_height = rows as f64 * bh + (rows.saturating_sub(1)) as f64 * gap;
+                    let grid_top = lh + gap_y;
+                    let grid_height = rows as f64 * bh + (rows.saturating_sub(1)) as f64 * gap_y;
                     let grid_y = vh - grid_top - grid_height;
-                    let x = grid_x + col as f64 * (bw + gap);
+                    let x = grid_x + col as f64 * (bw + gap_x);
                     // 与 rebuild_collapsed 中 grid 内 y 一致，再加 container 原点
-                    let y_local = grid_height - (row as f64 + 1.0) * bh - row as f64 * gap;
+                    let y_local = grid_height - (row as f64 + 1.0) * bh - row as f64 * gap_y;
                     (x, grid_y + y_local)
                 } else {
                     let header = PanelConfig::PANEL_HEADER_HEIGHT as f64;
                     let pad = PanelConfig::PANEL_PADDING as f64;
-                    let x = pad + col as f64 * (bw + gap);
-                    let y_from_top = header + pad + row as f64 * (bh + gap);
+                    let x = pad + col as f64 * (bw + gap_x);
+                    let y_from_top = header + pad + row as f64 * (bh + gap_y);
                     // 必须与 rebuild_full 一致：勿重复减 header/pad
                     let y = vh - y_from_top - bh;
                     (x, y)
@@ -892,7 +897,8 @@ impl NativePanel {
         let rows = panel_cfg.rows.max(1) as usize;
         let bw = panel_cfg.button_width as f64;
         let bh = panel_cfg.button_height as f64;
-        let gap = panel_cfg.gap as f64;
+        let gap_x = panel_cfg.gap_x as f64;
+        let gap_y = panel_cfg.gap_y as f64;
         let pad = PanelConfig::PANEL_PADDING as f64;
         let header = PanelConfig::PANEL_HEADER_HEIGHT as f64;
 
@@ -902,8 +908,8 @@ impl NativePanel {
             if row >= rows {
                 break;
             }
-            let x = pad + col as f64 * (bw + gap);
-            let y_from_top = header + pad + row as f64 * (bh + gap);
+            let x = pad + col as f64 * (bw + gap_x);
+            let y_from_top = header + pad + row as f64 * (bh + gap_y);
             let y = vh as f64 - y_from_top - bh;
 
             let btn = unsafe {
@@ -1019,7 +1025,8 @@ impl NativePanel {
         }
 
         let (lw, lh) = PanelConfig::collapsed_launcher_alloc();
-        let gap = panel_cfg.gap as f64;
+        let gap_x = panel_cfg.gap_x as f64;
+        let gap_y = panel_cfg.gap_y as f64;
         let (full_w, _) = panel_cfg.panel_size();
         let launcher_x = ((vw as f64 - lw as f64) * 0.5).max(0.0);
         let launcher_y = vh as f64 - lh as f64; // top of content in cocoa y
@@ -1051,11 +1058,10 @@ impl NativePanel {
         let rows = panel_cfg.rows.max(1) as usize;
         let bw = panel_cfg.button_width as f64;
         let bh = panel_cfg.button_height as f64;
-        let btn_gap = panel_cfg.gap as f64;
         let grid_x = ((vw as f64 - full_w as f64) * 0.5).max(0.0);
-        let grid_top = lh as f64 + gap;
-        let grid_height = rows as f64 * bh + (rows.saturating_sub(1)) as f64 * btn_gap;
-        let grid_width = cols as f64 * bw + (cols.saturating_sub(1)) as f64 * btn_gap;
+        let grid_top = lh as f64 + gap_y;
+        let grid_height = rows as f64 * bh + (rows.saturating_sub(1)) as f64 * gap_y;
+        let grid_width = cols as f64 * bw + (cols.saturating_sub(1)) as f64 * gap_x;
         let grid_container = unsafe {
             NSView::initWithFrame(
                 mtm.alloc(),
@@ -1071,8 +1077,8 @@ impl NativePanel {
             if row >= rows {
                 break;
             }
-            let x = col as f64 * (bw + btn_gap);
-            let y = grid_height - (row as f64 + 1.0) * bh - row as f64 * btn_gap;
+            let x = col as f64 * (bw + gap_x);
+            let y = grid_height - (row as f64 + 1.0) * bh - row as f64 * gap_y;
             let btn = unsafe {
                 let b = NSButton::initWithFrame(
                     mtm.alloc(),
@@ -1245,38 +1251,53 @@ fn style_grid_button(
         .as_deref()
         .and_then(parse_color)
         .unwrap_or(style.button_bg);
-    let border = cfg
+    // 仅「可见」的单键边框色才覆盖主题；transparent/none 视为未设置
+    let per_button_border = cfg
         .border_color
         .as_deref()
         .and_then(parse_color)
-        .unwrap_or(style.button_border_color);
-    let border_on = style.button_border_enabled || cfg.border_color.is_some();
-    let border_w = if cfg.border_color.is_some() && style.button_border_width <= 0.0 {
+        .filter(|c| c.a > 0);
+    let border = per_button_border.unwrap_or(style.button_border_color);
+    let border_on = style.button_border_enabled || per_button_border.is_some();
+    let border_w = if per_button_border.is_some() && style.button_border_width <= 0.0 {
         1.0
     } else {
         style.button_border_width
     };
 
     unsafe {
-        // 关闭系统圆角胶囊边框（否则 64×64 也会画成扁长圆角条）
+        // 纯色扁平按钮：关掉系统 bezel / 灰边 / 阴影 / focus ring
         button.setBordered(false);
         button.setBezelStyle(NSBezelStyle::FlexiblePush);
+        button.setButtonType(objc2_app_kit::NSButtonType::MomentaryChange);
+        button.setFocusRingType(objc2_app_kit::NSFocusRingType::None);
+        button.setShowsBorderOnlyWhileMouseInside(false);
         button.setEnabled(enabled);
+        if let Some(cell) = button.cell() {
+            // NSNoCellMask = 0：禁止系统灰阶/背景高亮描边
+            let _: () = msg_send![&*cell, setHighlightsBy: 0_usize];
+            let _: () = msg_send![&*cell, setShowsStateBy: 0_usize];
+        }
 
         button.setWantsLayer(true);
         if let Some(layer) = button.layer() {
             // 部分 CALayer 方法受 crate feature 门控；用 msg_send 保证可用
             let _: () = msg_send![&*layer, setCornerRadius: BUTTON_CORNER_RADIUS];
             let _: () = msg_send![&*layer, setMasksToBounds: true];
+            let _: () = msg_send![&*layer, setShadowOpacity: 0.0_f32];
+            let _: () = msg_send![&*layer, setShadowRadius: 0.0_f64];
+            let _: () = msg_send![&*layer, setShadowOffset: NSSize::new(0.0, 0.0)];
             let bg_a = if enabled { opacity } else { opacity * 0.45 };
             let bg_color = ns_color(scale_alpha(bg, bg_a));
             let _: () = msg_send![&*layer, setBackgroundColor: &*bg_color.CGColor()];
+            // 无论是否启用，都先清掉 layer 边框，避免复用/系统残留描边
+            let _: () = msg_send![&*layer, setBorderWidth: 0.0_f64];
+            let clear = ns_color(RgbColor::TRANSPARENT);
+            let _: () = msg_send![&*layer, setBorderColor: &*clear.CGColor()];
             if border_on && border_w > 0.0 {
                 let _: () = msg_send![&*layer, setBorderWidth: border_w as f64];
                 let border_color = ns_color(scale_alpha(border, opacity));
                 let _: () = msg_send![&*layer, setBorderColor: &*border_color.CGColor()];
-            } else {
-                let _: () = msg_send![&*layer, setBorderWidth: 0.0_f64];
             }
         }
 
@@ -1409,24 +1430,38 @@ fn attach_launcher_context_menu(
 fn fingerprint(panel: &PanelConfig, buttons: &[ButtonConfig], pinned: bool) -> String {
     use std::fmt::Write;
     let mut s = String::new();
+    let style = &panel.ui_style;
     let _ = write!(
         &mut s,
-        "{}x{}:{:.0}x{:.0}:{:.0}:{:?}:{:.2}:{}:{}:{}",
+        "{}x{}:{:.0}x{:.0}:{:.0}x{:.0}:{:?}:{:.2}:{}:{}:{}|style:{}:{:.1}:{:?}:{:?}:{:?}:{:?}:{:?}:{:.1}:{}:{:.1}:{:?}",
         panel.cols,
         panel.rows,
         panel.button_width,
         panel.button_height,
-        panel.gap,
+        panel.gap_x,
+        panel.gap_y,
         panel.display_mode,
         panel.opacity,
         panel.collapsed,
         pinned,
-        buttons.len()
+        buttons.len(),
+        // ui_style：边框/配色变更必须触发重建，否则按钮 layer 仍用旧样式
+        style.button_border_enabled,
+        style.button_border_width,
+        style.button_border_color,
+        style.button_bg,
+        style.background,
+        style.letter_bg,
+        style.letter_color,
+        style.letter_size,
+        style.window_border_enabled,
+        style.window_border_width,
+        style.window_border_color,
     );
     for (i, b) in buttons.iter().enumerate() {
         let _ = write!(
             &mut s,
-            "|{i}:{}:{}:{:?}:{}:{:?}:{:?}:{:?}:{}",
+            "|{i}:{}:{}:{:?}:{}:{:?}:{:?}:{:?}:{}:{}",
             b.enabled,
             b.label,
             b.icon,
@@ -1434,6 +1469,7 @@ fn fingerprint(panel: &PanelConfig, buttons: &[ButtonConfig], pinned: bool) -> S
             b.background_color,
             b.border_color,
             b.icon_color,
+            b.hotkey.as_deref().unwrap_or(""),
             b.action.hover_fingerprint()
         );
     }

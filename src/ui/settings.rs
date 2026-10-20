@@ -386,11 +386,6 @@ impl SettingsEditor {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("间距");
-            ui.add(egui::DragValue::new(panel.gap.get_or_insert(4.0)).range(0.0..=32.0));
-        });
-
-        ui.horizontal(|ui| {
             ui.label("位置 X");
             ui.add(egui::DragValue::new(&mut position.x).speed(1.0));
             ui.label("Y");
@@ -496,6 +491,34 @@ impl SettingsEditor {
             (64.0, 64.0),
             false,
         );
+        ui.horizontal(|ui| {
+            ui.label("左右间距");
+            ui.add(
+                egui::Slider::new(
+                    self.draft
+                        .global_panel
+                        .settings
+                        .gap_x
+                        .get_or_insert(4.0),
+                    0.0..=32.0,
+                )
+                .integer(),
+            );
+        });
+        ui.horizontal(|ui| {
+            ui.label("上下间距");
+            ui.add(
+                egui::Slider::new(
+                    self.draft
+                        .global_panel
+                        .settings
+                        .gap_y
+                        .get_or_insert(4.0),
+                    0.0..=32.0,
+                )
+                .integer(),
+            );
+        });
         show_theme_settings_editor(
             ui,
             "theme_global",
@@ -1010,41 +1033,18 @@ fn show_theme_settings_editor(ui: &mut egui::Ui, id_prefix: &str, theme: &mut Th
             ui.label("留空则使用系统默认中文字体；可填 .ttf / .ttc 绝对路径。");
         });
 
-    egui::CollapsingHeader::new("窗口边框")
-        .id_salt(format!("{id_prefix}_window_border"))
-        .show(ui, |ui| {
-            ui.push_id(format!("{id_prefix}_window_border_enabled"), |ui| {
-                let enabled = theme.window_border_enabled.get_or_insert(false);
-                ui.checkbox(enabled, "显示窗口边框");
-            });
-            ui.push_id(format!("{id_prefix}_window_border_width"), |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("粗细");
-                    let width = theme.window_border_width.get_or_insert(1.0);
-                    ui.add(egui::DragValue::new(width).range(0.0..=8.0).speed(0.1));
-                });
-            });
-            color_field(
-                ui,
-                id_prefix,
-                "window_border_color",
-                "颜色",
-                &mut theme.window_border_color,
-            );
-        });
-
     egui::CollapsingHeader::new("按钮边框")
         .id_salt(format!("{id_prefix}_button_border"))
         .show(ui, |ui| {
             ui.push_id(format!("{id_prefix}_button_border_enabled"), |ui| {
-                let enabled = theme.button_border_enabled.get_or_insert(true);
+                let enabled = theme.button_border_enabled.get_or_insert(false);
                 ui.checkbox(enabled, "显示按钮边框");
             });
             ui.push_id(format!("{id_prefix}_button_border_width"), |ui| {
                 ui.horizontal(|ui| {
                     ui.label("粗细");
                     let width = theme.button_border_width.get_or_insert(1.0);
-                    ui.add(egui::DragValue::new(width).range(0.0..=8.0).speed(0.1));
+                    ui.add(egui::Slider::new(width, 0.0..=8.0).fixed_decimals(1));
                 });
             });
             color_field(

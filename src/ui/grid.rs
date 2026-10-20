@@ -64,7 +64,7 @@ impl GridView {
         let cols = panel.cols as usize;
 
         egui::Grid::new("meotool_grid")
-            .spacing(egui::vec2(panel.gap, panel.gap))
+            .spacing(egui::vec2(panel.gap_x, panel.gap_y))
             .show(ui, |ui| {
                 for (index, button) in buttons.iter().enumerate() {
                     if index > 0 && index % cols == 0 {
