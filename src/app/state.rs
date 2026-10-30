@@ -505,25 +505,12 @@ fn ensure_collapsed_icon(app_config: &mut crate::config::AppConfig) {
 }
 
 fn restore_target_window_focus(window: &WindowInfo) -> Result<(), String> {
-    use std::time::{Duration, Instant};
-
     if let Some(active) = fetch_active_window() {
         if active.process_id == window.process_id {
             return Ok(());
         }
     }
 
-    crate::platform::activate_app(window)?;
-
-    let deadline = Instant::now() + Duration::from_millis(80);
-    while Instant::now() < deadline {
-        if let Some(active) = fetch_active_window() {
-            if active.process_id == window.process_id {
-                return Ok(());
-            }
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-
-    Ok(())
+    // AppKit / osascript 激活后通常已足够；不再自旋 sleep，避免托盘路径卡主线程
+    crate::platform::activate_app(window)
 }

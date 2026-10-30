@@ -144,47 +144,53 @@ mod macos_impl {
         }
     }
 
-    #[cfg(any(feature = "ui-egui", test))]
     pub fn activate_app(window: &crate::config::WindowInfo) -> Result<(), String> {
         let pid = window.process_id;
         if pid == 0 {
             return Err("invalid process id".into());
         }
-
-        // 按 PID 切回目标应用，避免 `open -a` 误启动新实例/新窗口
-        let script = format!(
-            "tell application \"System Events\" to set frontmost of (first process whose unix id is {pid}) to true"
-        );
-        let output = Command::new("osascript")
-            .args(["-e", &script])
-            .output()
-            .map_err(|e| format!("osascript failed: {e}"))?;
-        if !output.status.success() {
-            return Err(format!(
-                "activate pid {pid} failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
-        }
-        Ok(())
+        activate_pid(pid)
     }
 
-    #[cfg(any(feature = "ui-egui", test))]
+    #[allow(dead_code)]
     pub fn activate_self() -> Result<(), String> {
-        let pid = std::process::id();
-        let script = format!(
-            "tell application \"System Events\" to set frontmost of (first process whose unix id is {pid}) to true"
-        );
-        let output = Command::new("osascript")
-            .args(["-e", &script])
-            .output()
-            .map_err(|e| format!("osascript failed: {e}"))?;
-        if !output.status.success() {
-            return Err(format!(
-                "activate self failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
+        activate_pid(u64::from(std::process::id()))
+    }
+
+    fn activate_pid(pid: u64) -> Result<(), String> {
+        #[cfg(feature = "ui-native")]
+        {
+            use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
+            let pid_t = i32::try_from(pid).map_err(|_| format!("invalid process id {pid}"))?;
+            let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid_t)
+            else {
+                return Err(format!("no running application for pid {pid}"));
+            };
+            let ok = app.activateWithOptions(NSApplicationActivationOptions::empty());
+            if !ok {
+                return Err(format!("activate pid {pid} was rejected"));
+            }
+            return Ok(());
         }
-        Ok(())
+
+        #[cfg(not(feature = "ui-native"))]
+        {
+            // egui 路径无 AppKit 绑定：退回 osascript（会阻塞，仅作兜底）
+            let script = format!(
+                "tell application \"System Events\" to set frontmost of (first process whose unix id is {pid}) to true"
+            );
+            let output = Command::new("osascript")
+                .args(["-e", &script])
+                .output()
+                .map_err(|e| format!("osascript failed: {e}"))?;
+            if !output.status.success() {
+                return Err(format!(
+                    "activate pid {pid} failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ));
+            }
+            Ok(())
+        }
     }
 
     const SAFARI_BUNDLE_ID: &str = "com.apple.Safari";
@@ -336,12 +342,10 @@ mod macos_impl {
     pub fn open_accessibility_settings() {}
     pub fn open_input_monitoring_settings() {}
 
-    #[cfg(any(feature = "ui-egui", test))]
     pub fn activate_app(_window: &WindowInfo) -> Result<(), String> {
         Ok(())
     }
 
-    #[cfg(any(feature = "ui-egui", test))]
     pub fn activate_self() -> Result<(), String> {
         Ok(())
     }
@@ -373,13 +377,12 @@ pub fn open_input_monitoring_settings() {
     macos_impl::open_input_monitoring_settings();
 }
 
-#[cfg(any(feature = "ui-egui", test))]
 pub fn activate_app(window: &crate::config::WindowInfo) -> Result<(), String> {
     macos_impl::activate_app(window)
 }
 
 /// 将本应用激活并置于最前
-#[cfg(any(feature = "ui-egui", test))]
+#[cfg(feature = "ui-egui")]
 pub fn activate_self() -> Result<(), String> {
     macos_impl::activate_self()
 }

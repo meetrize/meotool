@@ -252,8 +252,28 @@ impl AppCore {
             log::info!("script already running, ignore button trigger");
             return;
         }
+        // 托盘/热键触发时前台常已离开目标应用；面板点击通常已在目标上会 early-out
+        self.restore_target_focus();
         if let Err(err) = self.executor.execute(&button.action) {
             log_action_error(&err);
+        }
+    }
+
+    fn restore_target_focus(&self) {
+        let Some(window) = self
+            .last_active_window
+            .as_ref()
+            .filter(|w| !w.is_own_process())
+        else {
+            return;
+        };
+        if let Some(active) = fetch_active_window() {
+            if active.process_id == window.process_id {
+                return;
+            }
+        }
+        if let Err(err) = crate::platform::activate_app(window) {
+            log::warn!("restore focus before trigger: {err}");
         }
     }
 

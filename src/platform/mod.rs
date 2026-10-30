@@ -19,8 +19,9 @@ pub use macos::{
 };
 #[allow(unused_imports)]
 pub use macos::PermissionStatus;
-#[cfg(any(feature = "ui-egui", test))]
-pub use macos::{activate_app, activate_self};
+pub use macos::activate_app;
+#[cfg(feature = "ui-egui")]
+pub use macos::activate_self;
 #[cfg(any(feature = "ui-egui", feature = "ui-native", test))]
 pub use macro_recorder::{MacroRecordOutcome, MacroRecorder};
 #[cfg(any(feature = "ui-egui", test))]

@@ -203,6 +203,8 @@ struct MeoToolApp {
     pending_settings_save: Option<Instant>,
     /// 手势会话未钉住：鼠标离开后到期隐藏
     gesture_leave_hide_after: Option<Instant>,
+    /// 托盘按钮命令：等模态菜单退出后再触发
+    pending_tray_trigger_at: Option<(usize, Instant)>,
 }
 
 impl MeoToolApp {
@@ -258,6 +260,7 @@ impl MeoToolApp {
             window_watch,
             pending_settings_save: None,
             gesture_leave_hide_after: None,
+            pending_tray_trigger_at: None,
         };
         app.sync_button_hotkeys();
         app
@@ -421,10 +424,25 @@ impl MeoToolApp {
             Some(TrayAction::OpenSettings) => self.open_settings(ctx),
             Some(TrayAction::Quit) => self.state.request_quit(),
             Some(TrayAction::TriggerButton(index)) => {
-                let _ = self.state.trigger_button(index, &self.theme);
+                // 与原生路径一致：等状态栏模态菜单退出后再执行，避免卡住
+                self.pending_tray_trigger_at =
+                    Some((index, Instant::now() + Duration::from_millis(80)));
+                ctx.request_repaint_after(Duration::from_millis(80));
             }
             None => {}
         }
+    }
+
+    fn flush_pending_tray_trigger(&mut self, ctx: &egui::Context) {
+        let Some((index, at)) = self.pending_tray_trigger_at else {
+            return;
+        };
+        if Instant::now() < at {
+            ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
+            return;
+        }
+        self.pending_tray_trigger_at = None;
+        let _ = self.state.trigger_button(index, &self.theme);
     }
 
     fn sync_tray_menu(&mut self) {
@@ -1317,6 +1335,7 @@ impl eframe::App for MeoToolApp {
         self.sync_numpad_hotkeys();
         self.poll_hotkeys(ctx);
         self.poll_tray(ctx);
+        self.flush_pending_tray_trigger(ctx);
         self.poll_mouse_gesture(ctx);
         self.update_gesture_leave_hide(ctx);
         self.poll_macro_recorder(ctx);

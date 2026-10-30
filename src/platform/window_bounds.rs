@@ -214,12 +214,10 @@ pub fn activate_bundle_id(bundle_id: &str) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        let output = Command::new("open")
-            .args(["-b", bundle_id])
-            .output()
-            .map_err(|e| format!("activate bundle failed: {e}"))?;
-        if output.status.success() {
-            return Ok(());
+        // 用 spawn 而非 .output()：避免在主线程上阻塞等待 open 退出
+        match Command::new("open").args(["-b", bundle_id]).spawn() {
+            Ok(_) => return Ok(()),
+            Err(err) => log::warn!("open -b {bundle_id} failed: {err}; trying osascript"),
         }
         let script = format!("tell application id \"{bundle_id}\" to activate");
         let output = Command::new("osascript")

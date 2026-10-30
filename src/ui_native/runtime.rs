@@ -47,6 +47,8 @@ use super::permissions::PermissionsWindow;
 use super::settings::SettingsWindow;
 
 const COLLAPSE_DELAY: Duration = Duration::from_millis(500);
+/// 系统菜单点击后延后触发，等模态菜单退出并让目标应用有机会重新置前
+const TRAY_TRIGGER_DEFER: Duration = Duration::from_millis(80);
 /// 未钉住手势面板：鼠标离开后延迟再藏，避免划过空隙误收
 const GESTURE_LEAVE_HIDE_DELAY: Duration = Duration::from_millis(280);
 const LAUNCHER_DRAG_THRESHOLD: f32 = 4.0;
@@ -1333,11 +1335,33 @@ impl NativeState {
         };
         for action in actions {
             self.mark_activity();
+            // 状态栏菜单是模态跟踪：在菜单关闭前同步执行动作会卡住主线程，
+            // 且易与 tray set_menu 重入冲突。按钮命令延后到菜单退出后再跑。
+            if let TrayAction::TriggerButton(index) = action {
+                dispatch::Queue::main().exec_after(TRAY_TRIGGER_DEFER, move || {
+                    STATE.with(|slot| {
+                        if let Ok(mut guard) = slot.try_borrow_mut() {
+                            if let Some(state) = guard.as_mut() {
+                                state.mark_activity();
+                                let effect =
+                                    state.core.handle(CoreCommand::TriggerButton(index));
+                                // 折叠模式：托盘触发后与面板点击一致，收起展开网格
+                                if state.core.is_collapsed_mode() && state.core.visible {
+                                    state.collapsed_ui.expanded = false;
+                                    state.collapsed_ui.collapse_after = None;
+                                }
+                                state.apply(effect);
+                            }
+                        }
+                    });
+                });
+                continue;
+            }
             let cmd = match action {
                 TrayAction::TogglePanel => CoreCommand::ToggleVisibility,
                 TrayAction::OpenSettings => CoreCommand::OpenSettings,
                 TrayAction::Quit => CoreCommand::Quit,
-                TrayAction::TriggerButton(i) => CoreCommand::TriggerButton(i),
+                TrayAction::TriggerButton(_) => unreachable!(),
             };
             let effect = self.core.handle(cmd);
             self.apply(effect);
