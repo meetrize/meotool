@@ -37,6 +37,8 @@ pub struct AppConfig {
     pub poll_interval_ms: u64,
     /// 上下文模式，默认 Profile（现有行为）
     pub context_mode: ContextMode,
+    /// 是否在菜单栏托盘菜单中列出已勾选的面板按钮
+    pub tray_show_buttons: bool,
 }
 
 /// 全局鼠标手势：右键按住拖动 / 中键点击唤起面板

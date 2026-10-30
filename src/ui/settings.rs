@@ -92,6 +92,7 @@ fn empty_app_config() -> AppConfig {
         profiles: vec![],
         poll_interval_ms: 200,
         context_mode: crate::config::ContextMode::Profile,
+        tray_show_buttons: false,
     }
 }
 
@@ -787,6 +788,7 @@ impl SettingsEditor {
                 icon_color: None,
                 scope: ButtonScope::Always,
                 hotkey: None,
+                show_in_tray_menu: false,
             });
         }
         profile.buttons.truncate(slots);

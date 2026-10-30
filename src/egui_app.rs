@@ -420,8 +420,25 @@ impl MeoToolApp {
             }
             Some(TrayAction::OpenSettings) => self.open_settings(ctx),
             Some(TrayAction::Quit) => self.state.request_quit(),
+            Some(TrayAction::TriggerButton(index)) => {
+                let _ = self.state.trigger_button(index, &self.theme);
+            }
             None => {}
         }
+    }
+
+    fn sync_tray_menu(&mut self) {
+        let Some(tray) = &mut self.tray else {
+            return;
+        };
+        let entries = if self.state.app_config.tray_show_buttons {
+            self.state
+                .panel
+                .tray_menu_entries(self.state.last_active_window.as_ref())
+        } else {
+            Vec::new()
+        };
+        tray.rebuild_menu(&entries);
     }
 
     fn open_settings(&mut self, ctx: &egui::Context) {
@@ -1296,6 +1313,7 @@ impl eframe::App for MeoToolApp {
         self.poll_window_events();
         self.poll_config_events();
         self.sync_tray_icon();
+        self.sync_tray_menu();
         self.sync_numpad_hotkeys();
         self.poll_hotkeys(ctx);
         self.poll_tray(ctx);

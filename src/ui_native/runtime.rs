@@ -186,6 +186,7 @@ impl NativeState {
         self.poll_button_clicks();
         self.poll_config();
         self.poll_active_window();
+        self.sync_tray_menu();
         self.settings.poll_actions();
         if let Some(session) = self.button_edit_session.as_mut() {
             self.script_editor.poll(session);
@@ -1305,6 +1306,20 @@ impl NativeState {
         }
     }
 
+    fn sync_tray_menu(&mut self) {
+        let Some(tray) = self.tray.as_mut() else {
+            return;
+        };
+        let entries = if self.core.app_config.tray_show_buttons {
+            self.core
+                .panel
+                .tray_menu_entries(self.core.last_active_window())
+        } else {
+            Vec::new()
+        };
+        tray.rebuild_menu(&entries);
+    }
+
     fn poll_tray(&mut self) {
         let actions: Vec<_> = {
             let Some(tray) = self.tray.as_ref() else {
@@ -1322,6 +1337,7 @@ impl NativeState {
                 TrayAction::TogglePanel => CoreCommand::ToggleVisibility,
                 TrayAction::OpenSettings => CoreCommand::OpenSettings,
                 TrayAction::Quit => CoreCommand::Quit,
+                TrayAction::TriggerButton(i) => CoreCommand::TriggerButton(i),
             };
             let effect = self.core.handle(cmd);
             self.apply(effect);

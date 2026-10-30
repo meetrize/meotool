@@ -110,6 +110,10 @@ impl AppCore {
         &self.resolved_buttons
     }
 
+    pub fn last_active_window(&self) -> Option<&WindowInfo> {
+        self.last_active_window.as_ref()
+    }
+
     pub fn viewport_size(&self) -> (f32, f32) {
         self.panel.viewport_size(false)
     }
@@ -477,6 +481,7 @@ mod tests {
                         icon_color: None,
                         scope: ButtonScope::Always,
                         hotkey: None,
+                        show_in_tray_menu: false,
                     },
                     ButtonConfig {
                         label: "B".into(),
@@ -493,9 +498,11 @@ mod tests {
                             title_regex_text: None,
                         }),
                         hotkey: None,
+                        show_in_tray_menu: false,
                     },
                 ],
             }],
+            tray_show_buttons: false,
         };
         let panel = app_config.build_panel(&app_config.profiles[0]);
         let mut core = AppCore {

@@ -73,6 +73,7 @@ mod tests {
                         icon_color: None,
                         scope: ButtonScope::Always,
                         hotkey: None,
+                        show_in_tray_menu: false,
                     }],
                 },
                 Profile {
@@ -94,6 +95,7 @@ mod tests {
             ],
             poll_interval_ms: 200,
             context_mode: ContextMode::Profile,
+            tray_show_buttons: false,
         }
     }
 

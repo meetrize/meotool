@@ -127,6 +127,7 @@ mod tests {
             icon_color: None,
             scope: super::super::model::ButtonScope::Always,
             hotkey: None,
+            show_in_tray_menu: false,
         };
         apply_preset(&mut cfg, 3);
         assert_eq!(

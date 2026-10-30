@@ -67,6 +67,9 @@ pub struct GlobalConfig {
     pub reload_config: Option<String>,
     pub quit: Option<String>,
     pub open_settings: Option<String>,
+    /// 在菜单栏托盘下拉菜单中显示已勾选的面板按钮
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tray_show_buttons: bool,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -217,6 +220,9 @@ pub struct ButtonFile {
     /// 触发本按钮动作的全局快捷键
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hotkey: Option<String>,
+    /// 是否出现在菜单栏托盘下拉菜单
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub show_in_tray_menu: bool,
 }
 
 fn default_enabled() -> bool {
@@ -344,6 +350,7 @@ impl ConfigFile {
             profiles,
             poll_interval_ms: self.window_poll_interval_ms,
             context_mode: ContextMode::parse(&self.context_mode),
+            tray_show_buttons: self.global.tray_show_buttons,
         })
     }
 }
@@ -450,6 +457,7 @@ impl ButtonFile {
                 .hotkey
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
+            show_in_tray_menu: self.show_in_tray_menu,
         })
     }
 }
@@ -787,8 +795,10 @@ source = """
                     icon_color: None,
                     scope: ButtonScope::Always,
                     hotkey: None,
+                    show_in_tray_menu: false,
                 }],
             }],
+            tray_show_buttons: false,
         });
 
         let serialized = toml::to_string_pretty(&file).expect("serialize");

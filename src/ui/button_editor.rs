@@ -90,6 +90,7 @@ impl Default for ButtonContextEditor {
                 icon_color: None,
                 scope: ButtonScope::Always,
                 hotkey: None,
+                show_in_tray_menu: false,
             },
             action_editor: ActionEditorState::default(),
             recorder: HotkeyRecorder::default(),

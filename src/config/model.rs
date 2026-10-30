@@ -176,6 +176,8 @@ pub struct ButtonConfig {
     pub scope: ButtonScope,
     /// 全局快捷键（如 `Cmd+Shift+1`）；按下后执行本按钮动作。空 / None 表示未设置
     pub hotkey: Option<String>,
+    /// 是否出现在菜单栏托盘下拉菜单（还需全局 `tray_show_buttons`）
+    pub show_in_tray_menu: bool,
 }
 
 /// 空槽位占位（不可见 / 未配置）
@@ -190,6 +192,7 @@ pub fn empty_slot_button() -> ButtonConfig {
         icon_color: None,
         scope: ButtonScope::Always,
         hotkey: None,
+        show_in_tray_menu: false,
     }
 }
 
@@ -601,6 +604,32 @@ impl PanelConfig {
             .take(slots)
             .collect()
     }
+
+    /// 托盘菜单条目：`(槽位 index, 菜单标题)`，按槽位顺序。
+    /// 需同时满足 enabled、已配置动作、`show_in_tray_menu`、scope 对当前窗口可见。
+    pub fn tray_menu_entries(&self, window: Option<&WindowInfo>) -> Vec<(usize, String)> {
+        let slots = self.slot_count();
+        self.buttons
+            .iter()
+            .take(slots)
+            .enumerate()
+            .filter(|(_, btn)| {
+                btn.enabled
+                    && btn.show_in_tray_menu
+                    && btn.action.is_configured()
+                    && btn.scope.is_visible(window)
+            })
+            .map(|(i, btn)| {
+                let label = btn.label.trim();
+                let title = if label.is_empty() {
+                    format!("按钮 {}", i + 1)
+                } else {
+                    label.to_string()
+                };
+                (i, title)
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -630,6 +659,7 @@ mod tests {
             icon_color: None,
             scope,
             hotkey: None,
+            show_in_tray_menu: false,
         }
     }
 
@@ -705,6 +735,71 @@ mod tests {
     }
 
     #[test]
+    fn tray_menu_entries_filters_and_orders() {
+        let mut always = button("复制", ButtonScope::Always);
+        always.show_in_tray_menu = true;
+        always.action = Action::Hotkey(vec![Key::Cmd, Key::Char('c')]);
+
+        let mut scoped = button("VS", vscode_scope());
+        scoped.show_in_tray_menu = true;
+        scoped.action = Action::OpenUrl {
+            url: "https://example.com".into(),
+        };
+
+        let mut disabled = button("关", ButtonScope::Always);
+        disabled.show_in_tray_menu = true;
+        disabled.enabled = false;
+        disabled.action = Action::OpenUrl {
+            url: "https://x".into(),
+        };
+
+        let mut no_flag = button("面板", ButtonScope::Always);
+        no_flag.action = Action::OpenUrl {
+            url: "https://y".into(),
+        };
+
+        let mut empty_label = button("", ButtonScope::Always);
+        empty_label.show_in_tray_menu = true;
+        empty_label.action = Action::OpenUrl {
+            url: "https://z".into(),
+        };
+
+        let panel = PanelConfig {
+            rows: 1,
+            cols: 5,
+            display_mode: DisplayMode::Text,
+            collapsed: false,
+            opacity: 1.0,
+            button_width: 64.0,
+            button_height: 64.0,
+            gap_x: 4.0,
+            gap_y: 4.0,
+            position: Position { x: 0.0, y: 0.0 },
+            collapsed_icon: None,
+            buttons: vec![always, scoped, disabled, no_flag, empty_label],
+            ui_style: UiStyle::default(),
+        };
+
+        let safari = window("Safari", Some("com.apple.Safari"));
+        let entries = panel.tray_menu_entries(Some(&safari));
+        assert_eq!(
+            entries,
+            vec![(0, "复制".into()), (4, "按钮 5".into())]
+        );
+
+        let vscode = window("Code", Some("com.microsoft.VSCode"));
+        let entries = panel.tray_menu_entries(Some(&vscode));
+        assert_eq!(
+            entries,
+            vec![
+                (0, "复制".into()),
+                (1, "VS".into()),
+                (4, "按钮 5".into())
+            ]
+        );
+    }
+
+    #[test]
     fn hover_tooltip_prefers_script_source() {
         let btn = ButtonConfig {
             label: "保存".into(),
@@ -716,6 +811,7 @@ mod tests {
             icon_color: None,
             scope: ButtonScope::Always,
             hotkey: Some("Cmd+Shift+1".into()),
+            show_in_tray_menu: false,
         };
         let tip = btn.hover_tooltip().expect("tooltip");
         assert!(tip.contains("保存"));

@@ -11,16 +11,20 @@ pub enum TrayAction {
     TogglePanel,
     OpenSettings,
     Quit,
+    /// 面板槽位 index，与面板点击 / 热键触发一致
+    TriggerButton(usize),
 }
 
 pub struct TrayManager {
     /// 必须持有，否则菜单栏图标会被释放
-    #[allow(dead_code)]
     tray: TrayIcon,
     /// macOS 顶部应用菜单（左侧 MeoTool 菜单），需保持存活
     #[cfg(target_os = "macos")]
     #[allow(dead_code)]
     _app_menu: Menu,
+    /// 最近一次同步的按钮菜单快照；未变则跳过 rebuild
+    last_button_entries: Vec<(usize, String)>,
+    button_ids: Vec<(MenuId, usize)>,
     toggle_id: MenuId,
     settings_id: MenuId,
     #[cfg(target_os = "macos")]
@@ -44,14 +48,7 @@ impl TrayManager {
         let icon_name = normalize_icon_name(icon_name);
         let icon = build_icon(icon_dirs, &icon_name)?;
 
-        let toggle_item = MenuItem::new("显示面板", true, None);
-        let settings_item = MenuItem::new("设置", true, None);
-        let separator = PredefinedMenuItem::separator();
-        let quit_item = MenuItem::new("退出", true, None);
-
-        let toggle_id = toggle_item.id().clone();
-        let settings_id = settings_item.id().clone();
-        let quit_id = quit_item.id().clone();
+        let built = build_tray_menu(&[])?;
 
         let (event_tx, event_rx) = mpsc::channel();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
@@ -59,18 +56,8 @@ impl TrayManager {
             wake.poke();
         }));
 
-        let menu = Menu::new();
-        menu.append(&toggle_item)
-            .map_err(|e| format!("tray menu: {e}"))?;
-        menu.append(&settings_item)
-            .map_err(|e| format!("tray menu: {e}"))?;
-        menu.append(&separator)
-            .map_err(|e| format!("tray menu: {e}"))?;
-        menu.append(&quit_item)
-            .map_err(|e| format!("tray menu: {e}"))?;
-
         let tray = TrayIconBuilder::new()
-            .with_menu(Box::new(menu))
+            .with_menu(Box::new(built.menu))
             .with_menu_on_left_click(true)
             .with_tooltip("MeoTool")
             .with_icon(icon)
@@ -85,17 +72,38 @@ impl TrayManager {
             tray,
             #[cfg(target_os = "macos")]
             _app_menu: app_menu,
-            toggle_id,
-            settings_id,
+            last_button_entries: Vec::new(),
+            button_ids: built.button_ids,
+            toggle_id: built.toggle_id,
+            settings_id: built.settings_id,
             #[cfg(target_os = "macos")]
             app_settings_id,
-            quit_id,
+            quit_id: built.quit_id,
             #[cfg(target_os = "macos")]
             app_quit_id,
             event_rx,
             icon_dirs: icon_dirs.to_vec(),
             current_icon: icon_name,
         })
+    }
+
+    /// 按条目重建托盘下拉菜单；`entries` 为空时仅保留固定三项。
+    /// 内容与上次相同则跳过。
+    pub fn rebuild_menu(&mut self, entries: &[(usize, String)]) {
+        if entries == self.last_button_entries.as_slice() {
+            return;
+        }
+        match build_tray_menu(entries) {
+            Ok(built) => {
+                self.tray.set_menu(Some(Box::new(built.menu)));
+                self.toggle_id = built.toggle_id;
+                self.settings_id = built.settings_id;
+                self.quit_id = built.quit_id;
+                self.button_ids = built.button_ids;
+                self.last_button_entries = entries.to_vec();
+            }
+            Err(err) => log::warn!("rebuild tray menu failed: {err}"),
+        }
     }
 
     /// 同步菜单栏图标为当前折叠桌宠图标（名称未变则跳过）
@@ -137,9 +145,64 @@ impl TrayManager {
             if id == self.app_quit_id {
                 return Some(TrayAction::Quit);
             }
+            if let Some((_, index)) = self.button_ids.iter().find(|(mid, _)| *mid == id) {
+                return Some(TrayAction::TriggerButton(*index));
+            }
         }
         None
     }
+}
+
+struct BuiltTrayMenu {
+    menu: Menu,
+    toggle_id: MenuId,
+    settings_id: MenuId,
+    quit_id: MenuId,
+    button_ids: Vec<(MenuId, usize)>,
+}
+
+fn build_tray_menu(entries: &[(usize, String)]) -> Result<BuiltTrayMenu, String> {
+    let mut button_ids = Vec::with_capacity(entries.len());
+    let mut button_items = Vec::with_capacity(entries.len());
+    for (index, title) in entries {
+        let item = MenuItem::new(title, true, None);
+        button_ids.push((item.id().clone(), *index));
+        button_items.push(item);
+    }
+
+    let toggle_item = MenuItem::new("显示面板", true, None);
+    let settings_item = MenuItem::new("设置", true, None);
+    let quit_item = MenuItem::new("退出", true, None);
+
+    let toggle_id = toggle_item.id().clone();
+    let settings_id = settings_item.id().clone();
+    let quit_id = quit_item.id().clone();
+
+    let menu = Menu::new();
+    for item in &button_items {
+        menu.append(item)
+            .map_err(|e| format!("tray menu button: {e}"))?;
+    }
+    if !button_items.is_empty() {
+        menu.append(&PredefinedMenuItem::separator())
+            .map_err(|e| format!("tray menu: {e}"))?;
+    }
+    menu.append(&toggle_item)
+        .map_err(|e| format!("tray menu: {e}"))?;
+    menu.append(&settings_item)
+        .map_err(|e| format!("tray menu: {e}"))?;
+    menu.append(&PredefinedMenuItem::separator())
+        .map_err(|e| format!("tray menu: {e}"))?;
+    menu.append(&quit_item)
+        .map_err(|e| format!("tray menu: {e}"))?;
+
+    Ok(BuiltTrayMenu {
+        menu,
+        toggle_id,
+        settings_id,
+        quit_id,
+        button_ids,
+    })
 }
 
 #[cfg(target_os = "macos")]

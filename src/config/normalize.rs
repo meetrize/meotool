@@ -83,6 +83,7 @@ mod tests {
             }],
             poll_interval_ms: 200,
             context_mode: ContextMode::Profile,
+            tray_show_buttons: false,
         }
     }
 

@@ -38,6 +38,7 @@ pub fn app_config_to_file(app: &AppConfig) -> ConfigFile {
             reload_config: Some(app.hotkeys.reload_config.clone()),
             quit: Some(app.hotkeys.quit.clone()),
             open_settings: Some(app.hotkeys.open_settings.clone()),
+            tray_show_buttons: app.tray_show_buttons,
         },
         profiles: app.profiles.iter().map(profile_to_file).collect(),
         window_poll_interval_ms: app.poll_interval_ms,
@@ -158,6 +159,7 @@ fn button_to_file(button: &ButtonConfig) -> ButtonFile {
             .as_ref()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty()),
+        show_in_tray_menu: button.show_in_tray_menu,
     }
 }
 

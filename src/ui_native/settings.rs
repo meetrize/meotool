@@ -265,6 +265,7 @@ struct GlobalFields {
     pos_y: Retained<NSTextField>,
     poll_ms: Retained<NSTextField>,
     context_mode: Retained<NSPopUpButton>,
+    tray_show_buttons: Retained<NSSwitch>,
     status: Retained<NSTextField>,
 }
 
@@ -920,6 +921,10 @@ impl SettingsWindow {
             &self.global.poll_ms,
             &self.draft.poll_interval_ms.to_string(),
         );
+        set_switch(
+            &self.global.tray_show_buttons,
+            self.draft.tray_show_buttons,
+        );
         set_field(
             &self.global.status,
             self.status_message.as_deref().unwrap_or(""),
@@ -1230,6 +1235,7 @@ impl SettingsWindow {
         } else {
             ContextMode::Profile
         };
+        self.draft.tray_show_buttons = switch_on(&self.global.tray_show_buttons);
 
         self.draft.global_panel.settings.button_width = Some(slider_size(&self.appearance.btn_w));
         self.draft.global_panel.settings.button_height = Some(slider_size(&self.appearance.btn_h));
@@ -1409,6 +1415,12 @@ fn build_general_page(
         status.setTextColor(Some(&NSColor::systemRedColor()));
     }
 
+    let (r_tray, tray_show_buttons) = labeled_switch(mtm, "在菜单栏显示面板按钮");
+    let tray_help = help_label(
+        mtm,
+        "开启后，已在按钮设置中勾选「显示在系统菜单」的按钮会出现在菜单栏图标的下拉菜单中。",
+    );
+
     for control in [&collapsed_icon, &pos_x, &pos_y, &poll_ms] {
         unsafe {
             control.setTarget(Some(target));
@@ -1422,6 +1434,8 @@ fn build_general_page(
         collapsed.setAction(Some(objc2::sel!(fieldChanged:)));
         context_mode.setTarget(Some(target));
         context_mode.setAction(Some(objc2::sel!(fieldChanged:)));
+        tray_show_buttons.setTarget(Some(target));
+        tray_show_buttons.setAction(Some(objc2::sel!(fieldChanged:)));
     }
 
     for row in [&r1, &r2, &r3, &r4, &r5, &opacity_row, &r7, &r8, &r9, &r10] {
@@ -1429,6 +1443,9 @@ fn build_general_page(
     }
     add_arranged(&page, &help);
     add_arranged(&page, &status);
+    add_arranged(&page, &section_title(mtm, "菜单栏"));
+    add_arranged(&page, &r_tray);
+    add_arranged(&page, &tray_help);
 
     let gesture = append_gesture_section(&page, mtm, target);
 
@@ -1448,6 +1465,7 @@ fn build_general_page(
             pos_y,
             poll_ms,
             context_mode,
+            tray_show_buttons,
             status,
         },
         gesture,

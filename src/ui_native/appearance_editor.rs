@@ -209,6 +209,7 @@ pub struct AppearanceEditorWindow {
     target: Retained<AppearanceEditorTarget>,
     scroll: Retained<NSScrollView>,
     enabled: Retained<NSSwitch>,
+    show_in_tray_menu: Retained<NSSwitch>,
     label: Retained<NSTextField>,
     icon: Retained<NSTextField>,
     icon_preview: Retained<NSImageView>,
@@ -287,6 +288,7 @@ impl AppearanceEditorWindow {
 
         let mut y = CONTENT_PAD;
         let enabled = switch_row(mtm, &document, "启用", &mut y, tg);
+        let show_in_tray_menu = switch_row(mtm, &document, "显示在系统菜单", &mut y, tg);
         let label = labeled(mtm, &document, "标签", FIELD_W, &mut y);
         let (icon, icon_preview) = icon_row(mtm, &document, FIELD_W, &mut y, tg);
         let (hotkey_field, hotkey_record_btn, hotkey_clear_btn) =
@@ -311,6 +313,8 @@ impl AppearanceEditorWindow {
         unsafe {
             enabled.setTarget(Some(tg));
             enabled.setAction(Some(objc2::sel!(fieldChanged:)));
+            show_in_tray_menu.setTarget(Some(tg));
+            show_in_tray_menu.setAction(Some(objc2::sel!(fieldChanged:)));
             for f in [&label, &scope_bundle, &scope_app] {
                 f.setTarget(Some(tg));
                 f.setAction(Some(objc2::sel!(fieldChanged:)));
@@ -342,6 +346,7 @@ impl AppearanceEditorWindow {
             target,
             scroll,
             enabled,
+            show_in_tray_menu,
             label,
             icon,
             icon_preview,
@@ -368,6 +373,7 @@ impl AppearanceEditorWindow {
                 icon_color: None,
                 scope: ButtonScope::Always,
                 hotkey: None,
+                show_in_tray_menu: false,
             },
             icon_dirs: Vec::new(),
             theme_button_bg: RgbColor::rgba(40, 40, 40, 217),
@@ -458,6 +464,8 @@ impl AppearanceEditorWindow {
     /// 将表单字段写入 `session.draft`（保留 `draft.action` 不变）。
     pub fn collect(&self, session: &mut ButtonEditSession) {
         let enabled = unsafe { self.enabled.state() } == NSControlStateValueOn;
+        let show_in_tray_menu =
+            unsafe { self.show_in_tray_menu.state() } == NSControlStateValueOn;
         let label = unsafe { self.label.stringValue().to_string() };
         let icon = {
             let s = unsafe { self.icon.stringValue().to_string() };
@@ -476,6 +484,7 @@ impl AppearanceEditorWindow {
         session.draft.label = label;
         session.draft.icon = icon;
         session.draft.enabled = enabled;
+        session.draft.show_in_tray_menu = show_in_tray_menu;
         session.draft.background_color = self.draft.background_color.clone();
         session.draft.border_color = self.draft.border_color.clone();
         session.draft.icon_color = self.draft.icon_color.clone();
@@ -486,6 +495,8 @@ impl AppearanceEditorWindow {
     fn merge_ui_into_draft(&mut self) {
         let enabled = unsafe { self.enabled.state() } == NSControlStateValueOn;
         self.draft.enabled = enabled;
+        self.draft.show_in_tray_menu =
+            unsafe { self.show_in_tray_menu.state() } == NSControlStateValueOn;
         self.draft.label = unsafe { self.label.stringValue().to_string() };
         let icon_s = unsafe { self.icon.stringValue().to_string() };
         let icon_t = icon_s.trim().to_string();
@@ -577,6 +588,11 @@ impl AppearanceEditorWindow {
     fn load(&mut self) {
         unsafe {
             self.enabled.setState(if self.draft.enabled {
+                NSControlStateValueOn
+            } else {
+                NSControlStateValueOff
+            });
+            self.show_in_tray_menu.setState(if self.draft.show_in_tray_menu {
                 NSControlStateValueOn
             } else {
                 NSControlStateValueOff
