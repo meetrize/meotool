@@ -80,17 +80,8 @@ pub fn play_script_async(script: ActionScript) -> Result<(), String> {
     };
 
     thread::spawn(move || {
-        let settings = enigo::Settings {
-            open_prompt_to_get_permissions: false,
-            ..enigo::Settings::default()
-        };
-        let result = match Enigo::new(&settings) {
-            Ok(mut enigo) => play_program(&mut enigo, &program),
-            Err(err) => Err(format!(
-                "无法模拟键鼠输入（需要辅助功能权限）: {err}. \
-                 请前往：系统设置 → 隐私与安全性 → 辅助功能，授权后重启应用"
-            )),
-        };
+        // macOS：Enigo/HIToolbox 必须在主线程，否则会 SIGTRAP 崩退
+        let result = play_program_from_any_thread(&program);
         if let Err(err) = result {
             warn!("script async play failed: {err}");
         }
@@ -120,30 +111,142 @@ pub fn play_script_try_run(
     };
 
     thread::spawn(move || {
-        let settings = enigo::Settings {
-            open_prompt_to_get_permissions: false,
-            ..enigo::Settings::default()
-        };
-        let result = match Enigo::new(&settings) {
-            Ok(mut enigo) => play_program(&mut enigo, &program),
-            Err(err) => Err(format!(
-                "无法模拟键鼠输入（需要辅助功能权限）: {err}. \
-                 请前往：系统设置 → 隐私与安全性 → 辅助功能，授权后重启应用"
-            )),
-        };
+        let result = play_program_from_any_thread(&program);
         end_script();
         on_done(result);
     });
     Ok(())
 }
 
-fn play_program(enigo: &mut Enigo, program: &FlowProgram) -> Result<(), String> {
+fn create_enigo() -> Result<Enigo, String> {
+    let settings = enigo::Settings {
+        open_prompt_to_get_permissions: false,
+        ..enigo::Settings::default()
+    };
+    Enigo::new(&settings).map_err(|err| {
+        format!(
+            "无法模拟键鼠输入（需要辅助功能权限）: {err}. \
+             请前往：系统设置 → 隐私与安全性 → 辅助功能，授权后重启应用"
+        )
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn is_main_thread() -> bool {
+    extern "C" {
+        fn pthread_main_np() -> i32;
+    }
+    unsafe { pthread_main_np() != 0 }
+}
+
+/// 在主线程执行闭包。已在主线程则直接跑，避免 GCD `dispatch_sync` 自死锁。
+fn run_on_main<F, T>(f: F) -> T
+where
+    F: Send + FnOnce() -> T,
+    T: Send,
+{
+    #[cfg(target_os = "macos")]
+    {
+        if is_main_thread() {
+            f()
+        } else {
+            dispatch::Queue::main().exec_sync(f)
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        f()
+    }
+}
+
+fn step_needs_enigo(step: &FlowStep) -> bool {
+    !matches!(
+        step,
+        FlowStep::Delay { .. }
+            | FlowStep::Shell { .. }
+            | FlowStep::OpenApp { .. }
+            | FlowStep::OpenUrl { .. }
+            | FlowStep::OpenFile { .. }
+            | FlowStep::ActivateApp { .. }
+    )
+}
+
+/// 任意线程可调用：等待/打开类步骤留在当前线程，键鼠步骤切到主线程执行。
+fn play_program_from_any_thread(program: &FlowProgram) -> Result<(), String> {
+    validate_program(program)?;
+
+    let restore_pos = run_on_main(|| -> Result<Option<(i32, i32)>, String> {
+        let enigo = create_enigo()?;
+        Ok(enigo.location().ok())
+    })?;
+
+    let exclude_pid = Some(std::process::id());
+    let mut preferred_bundle: Option<String> = None;
+    let mut spent_ms = 0u64;
+
+    let result = (|| {
+        for (index, step) in program.steps.iter().enumerate() {
+            let step_no = index + 1;
+            let step_result = if step_needs_enigo(step) {
+                run_on_main(|| {
+                    let mut enigo = create_enigo()?;
+                    execute_step(
+                        &mut enigo,
+                        step,
+                        exclude_pid,
+                        &mut preferred_bundle,
+                        &mut spent_ms,
+                    )
+                })
+            } else {
+                execute_step_no_enigo(step, &mut preferred_bundle, &mut spent_ms)
+            };
+            match step_result {
+                Ok(()) => {}
+                Err(err) => {
+                    return Err(format!("脚本第 {step_no} 步失败：{err}"));
+                }
+            }
+            if spent_ms > FlowProgram::MAX_TOTAL_MS {
+                return Err(format!("脚本第 {step_no} 步后总时长超限"));
+            }
+        }
+        Ok(())
+    })();
+
+    if let Some((x, y)) = restore_pos {
+        if let Err(err) = run_on_main(|| {
+            let mut enigo = create_enigo()?;
+            enigo
+                .move_mouse(x, y, Coordinate::Abs)
+                .map_err(|e| format!("{e}"))
+        }) {
+            warn!("restore cursor after script failed: {err}");
+        }
+    }
+
+    result?;
+    info!(
+        "executed script: {} steps, ~{}ms",
+        program.steps.len(),
+        program.estimated_ms
+    );
+    Ok(())
+}
+
+fn validate_program(program: &FlowProgram) -> Result<(), String> {
     if program.steps.is_empty() {
         return Err("脚本没有可执行步骤".into());
     }
     if program.steps.len() > FlowProgram::MAX_STEPS {
         return Err(format!("脚本步骤过多（最多 {} 步）", FlowProgram::MAX_STEPS));
     }
+    Ok(())
+}
+
+#[cfg(feature = "ui-egui")]
+fn play_program(enigo: &mut Enigo, program: &FlowProgram) -> Result<(), String> {
+    validate_program(program)?;
 
     let restore_pos = enigo.location().ok();
     let exclude_pid = Some(std::process::id());
@@ -185,6 +288,51 @@ fn play_program(enigo: &mut Enigo, program: &FlowProgram) -> Result<(), String> 
         program.estimated_ms
     );
     Ok(())
+}
+
+fn execute_step_no_enigo(
+    step: &FlowStep,
+    preferred_bundle: &mut Option<String>,
+    spent_ms: &mut u64,
+) -> Result<(), String> {
+    match step {
+        FlowStep::Delay { ms } => {
+            let ms = (*ms).min(FlowProgram::MAX_WAIT_MS);
+            *spent_ms = spent_ms.saturating_add(ms);
+            if ms > 0 {
+                thread::sleep(Duration::from_millis(ms));
+            }
+            Ok(())
+        }
+        FlowStep::OpenApp { target } => {
+            open_app(target)?;
+            *spent_ms = spent_ms.saturating_add(200);
+            Ok(())
+        }
+        FlowStep::OpenUrl { url } => {
+            open_url(url)?;
+            *spent_ms = spent_ms.saturating_add(200);
+            Ok(())
+        }
+        FlowStep::OpenFile { path } => {
+            open_file(path)?;
+            *spent_ms = spent_ms.saturating_add(200);
+            Ok(())
+        }
+        FlowStep::Shell { command } => {
+            run_shell_timeout(command, FlowProgram::SHELL_TIMEOUT_MS)?;
+            *spent_ms = spent_ms.saturating_add(300);
+            Ok(())
+        }
+        FlowStep::ActivateApp { bundle_id } => {
+            activate_bundle_id(bundle_id)?;
+            *preferred_bundle = Some(bundle_id.clone());
+            *spent_ms = spent_ms.saturating_add(150);
+            thread::sleep(Duration::from_millis(150));
+            Ok(())
+        }
+        _ => Err("内部错误：该步骤需要键鼠模拟".into()),
+    }
 }
 
 fn execute_step(

@@ -16,7 +16,6 @@ ui-native = [
     "dep:objc2-app-kit",
     "dep:objc2-quartz-core",
     "dep:block2",
-    "dep:dispatch",
 ]
 renderer-glow = ["eframe/glow"]
 renderer-wgpu = ["eframe/wgpu"]
@@ -121,7 +120,8 @@ objc2-quartz-core = { version = "0.3", optional = true, default-features = false
     "objc2-core-graphics",
 ] }
 block2 = { version = "0.6", optional = true }
-dispatch = { version = "0.2", optional = true }
+# 脚本键鼠回放须在主线程调用 HIToolbox；后台编排线程用 GCD 同步切回主队列
+dispatch = "0.2"
 
 [profile.release]
 opt-level = "z"
