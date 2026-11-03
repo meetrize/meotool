@@ -6,6 +6,7 @@ use crate::config::ButtonConfig;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LauncherMenuAction {
     TogglePin,
+    TogglePositionFixed,
     ExpandToFull,
     Settings,
     Quit,
@@ -56,7 +57,12 @@ impl LauncherContextMenu {
         response.ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
 
-    pub fn show(&mut self, ctx: &Context, pinned: bool) -> Option<LauncherMenuAction> {
+    pub fn show(
+        &mut self,
+        ctx: &Context,
+        pinned: bool,
+        position_fixed: bool,
+    ) -> Option<LauncherMenuAction> {
         if !self.open {
             return None;
         }
@@ -84,7 +90,7 @@ impl LauncherContextMenu {
             .show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(140.0);
-                    draw_launcher_menu_items(ui, pinned, &mut action);
+                    draw_launcher_menu_items(ui, pinned, position_fixed, &mut action);
                 })
             })
             .response
@@ -107,13 +113,27 @@ impl LauncherContextMenu {
     }
 }
 
-fn draw_launcher_menu_items(ui: &mut Ui, pinned: bool, action: &mut Option<LauncherMenuAction>) {
+fn draw_launcher_menu_items(
+    ui: &mut Ui,
+    pinned: bool,
+    position_fixed: bool,
+    action: &mut Option<LauncherMenuAction>,
+) {
     if pinned {
         if ui.button("取消钉住").clicked() {
             *action = Some(LauncherMenuAction::TogglePin);
         }
     } else if ui.button("钉住面板").clicked() {
         *action = Some(LauncherMenuAction::TogglePin);
+    }
+
+    let pos_title = if position_fixed {
+        "跟随鼠标"
+    } else {
+        "固定位置"
+    };
+    if ui.button(pos_title).clicked() {
+        *action = Some(LauncherMenuAction::TogglePositionFixed);
     }
 
     if ui.button("恢复完整模式").clicked() {
@@ -141,6 +161,7 @@ pub enum ButtonMenuAction {
     Disable,
     ClearAction,
     Delete,
+    TogglePositionFixed,
     Settings,
     Quit,
 }
@@ -195,6 +216,7 @@ impl ButtonContextMenu {
         &mut self,
         ctx: &Context,
         buttons: &[ButtonConfig],
+        position_fixed: bool,
     ) -> Option<(usize, ButtonMenuAction)> {
         let index = self.open_for?;
         let button = buttons.get(index)?;
@@ -222,7 +244,7 @@ impl ButtonContextMenu {
             .show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(128.0);
-                    draw_menu_items(ui, button, &mut action);
+                    draw_menu_items(ui, button, position_fixed, &mut action);
                 })
             })
             .response
@@ -261,7 +283,12 @@ pub fn is_button_configured(button: &ButtonConfig) -> bool {
     !button.label.is_empty() || button.icon.is_some() || button.action.is_configured()
 }
 
-fn draw_menu_items(ui: &mut Ui, button: &ButtonConfig, action: &mut Option<ButtonMenuAction>) {
+fn draw_menu_items(
+    ui: &mut Ui,
+    button: &ButtonConfig,
+    position_fixed: bool,
+    action: &mut Option<ButtonMenuAction>,
+) {
     let configured = is_button_configured(button);
     let has_action = button.action.is_configured();
 
@@ -296,6 +323,17 @@ fn draw_menu_items(ui: &mut Ui, button: &ButtonConfig, action: &mut Option<Butto
         if ui.button("删除").clicked() {
             *action = Some(ButtonMenuAction::Delete);
         }
+    }
+
+    ui.separator();
+
+    let pos_title = if position_fixed {
+        "跟随鼠标"
+    } else {
+        "固定位置"
+    };
+    if ui.button(pos_title).clicked() {
+        *action = Some(ButtonMenuAction::TogglePositionFixed);
     }
 
     ui.separator();

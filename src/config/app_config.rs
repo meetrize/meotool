@@ -52,6 +52,8 @@ pub struct GestureConfig {
     pub hide_after_button: bool,
     /// 全局优先：后台可唤起，拖动时拦截右键事件避免被其他应用处理
     pub global_priority: bool,
+    /// 固定面板位置：手势唤起时不再跟随鼠标起点
+    pub position_fixed: bool,
 }
 
 impl Default for GestureConfig {
@@ -63,6 +65,7 @@ impl Default for GestureConfig {
             dismiss_on_outside_click: true,
             hide_after_button: true,
             global_priority: false,
+            position_fixed: false,
         }
     }
 }

@@ -661,8 +661,16 @@ impl NativeState {
         let panel_cfg = &self.core.panel;
         let expanded = self.collapsed_ui.expanded;
         let pinned = self.core.pinned;
+        let position_fixed = self.core.position_fixed();
         if let Some(pos) = self.panel.sync(
-            self.mtm, panel_cfg, buttons, icon_dirs, visible, expanded, pinned,
+            self.mtm,
+            panel_cfg,
+            buttons,
+            icon_dirs,
+            visible,
+            expanded,
+            pinned,
+            position_fixed,
         ) {
             self.core.panel.position.x = pos.x;
             self.core.panel.position.y = pos.y;
@@ -1216,6 +1224,9 @@ impl NativeState {
                     LauncherMenuAction::TogglePin => {
                         self.core.toggle_pinned();
                     }
+                    LauncherMenuAction::TogglePositionFixed => {
+                        self.toggle_position_fixed();
+                    }
                     LauncherMenuAction::ExpandToFull => self.set_collapsed_mode(false),
                     LauncherMenuAction::Settings => self.open_settings(),
                     LauncherMenuAction::Quit => {
@@ -1223,6 +1234,27 @@ impl NativeState {
                     }
                 },
             }
+        }
+    }
+
+    fn toggle_position_fixed(&mut self) {
+        let fixed = self.core.toggle_position_fixed();
+        if let Err(err) = save_app_config(&self.core.config_path, &self.core.app_config) {
+            log::error!("save position_fixed failed: {err}");
+        } else {
+            log::info!(
+                "panel position {}",
+                if fixed {
+                    "fixed"
+                } else {
+                    "follow mouse"
+                }
+            );
+        }
+        self.panel_sync_dirty = true;
+        if self.settings.is_visible() {
+            let cfg = self.core.app_config.clone();
+            self.settings.reload_from_config(&cfg);
         }
     }
 
@@ -1240,6 +1272,7 @@ impl NativeState {
                 let profile = self.core.current_profile_index().unwrap_or(0);
                 self.open_button_editor(profile, index, false);
             }
+            ButtonMenuAction::TogglePositionFixed => self.toggle_position_fixed(),
             ButtonMenuAction::Settings => self.open_settings(),
             ButtonMenuAction::Quit => {
                 let _ = self.core.handle(CoreCommand::Quit);

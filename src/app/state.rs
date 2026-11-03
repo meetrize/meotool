@@ -141,22 +141,25 @@ impl AppState {
         if self.is_collapsed_mode() {
             self.collapsed.expanded = true;
         }
-        let (w, h) = self.effective_viewport_size();
-        let pos = egui::pos2(anchor.x - w * 0.5, anchor.y - h * 0.5);
-        self.panel.position.x = pos.x;
-        self.panel.position.y = pos.y;
-        self.app_config.global_panel.position.x = pos.x;
-        self.app_config.global_panel.position.y = pos.y;
+        if !self.app_config.gesture.position_fixed {
+            let (w, h) = self.effective_viewport_size();
+            let pos = egui::pos2(anchor.x - w * 0.5, anchor.y - h * 0.5);
+            self.panel.position.x = pos.x;
+            self.panel.position.y = pos.y;
+            self.app_config.global_panel.position.x = pos.x;
+            self.app_config.global_panel.position.y = pos.y;
+        }
         self.visible = true;
         self.gesture_session = true;
         self.request_focus = true;
         self.selected_cell = None;
         log::info!(
-            "panel shown via gesture, anchor ({}, {}), top-left ({}, {})",
+            "panel shown via gesture, anchor ({}, {}), top-left ({}, {}), position_fixed={}",
             anchor.x,
             anchor.y,
-            pos.x,
-            pos.y
+            self.panel.position.x,
+            self.panel.position.y,
+            self.app_config.gesture.position_fixed
         );
     }
 

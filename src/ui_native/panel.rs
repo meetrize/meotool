@@ -230,6 +230,7 @@ impl PetLauncher {
         pet_name: &str,
         target: &ButtonTarget,
         pinned: bool,
+        position_fixed: bool,
         counters: &mut NativeMemoryCounters,
         icon_cache: &mut NativeIconCache,
     ) -> Retained<Self> {
@@ -254,7 +255,7 @@ impl PetLauncher {
             }
             view.addSubview(&img_view);
         }
-        attach_launcher_context_menu(mtm, view.as_ref(), target, pinned);
+        attach_launcher_context_menu(mtm, view.as_ref(), target, pinned, position_fixed);
         view
     }
 }
@@ -683,8 +684,9 @@ impl NativePanel {
         visible: bool,
         collapsed_expanded: bool,
         pinned: bool,
+        position_fixed: bool,
     ) -> Option<DraggedPosition> {
-        let fp = fingerprint(panel_cfg, buttons, pinned);
+        let fp = fingerprint(panel_cfg, buttons, pinned, position_fixed);
         let rebuilt = if fp != self.last_fingerprint {
             self.counters.record_fingerprint_change();
             self.rebuild(
@@ -694,6 +696,7 @@ impl NativePanel {
                 icon_dirs,
                 collapsed_expanded,
                 pinned,
+                position_fixed,
             );
             self.last_fingerprint = fp;
             self.last_collapsed_expanded = Some(collapsed_expanded);
@@ -863,6 +866,7 @@ impl NativePanel {
         icon_dirs: &[std::path::PathBuf],
         collapsed_expanded: bool,
         pinned: bool,
+        position_fixed: bool,
     ) {
         self.launcher_local = None;
         self.content_local = None;
@@ -875,9 +879,10 @@ impl NativePanel {
                 icon_dirs,
                 collapsed_expanded,
                 pinned,
+                position_fixed,
             );
         } else {
-            self.rebuild_full(mtm, panel_cfg, buttons, icon_dirs);
+            self.rebuild_full(mtm, panel_cfg, buttons, icon_dirs, position_fixed);
         }
     }
 
@@ -887,6 +892,7 @@ impl NativePanel {
         panel_cfg: &PanelConfig,
         buttons: &[ButtonConfig],
         icon_dirs: &[std::path::PathBuf],
+        position_fixed: bool,
     ) {
         let (vw, vh) = panel_cfg.viewport_size(false);
         let content = unsafe {
@@ -941,7 +947,7 @@ impl NativePanel {
                     &mut self.counters,
                     &mut self.icon_cache,
                 );
-                attach_button_context_menu(mtm, &b, &self.target, index, button);
+                attach_button_context_menu(mtm, &b, &self.target, index, button, position_fixed);
                 b
             };
             unsafe { content.addSubview(&btn) };
@@ -1020,6 +1026,7 @@ impl NativePanel {
         icon_dirs: &[std::path::PathBuf],
         expanded: bool,
         pinned: bool,
+        position_fixed: bool,
     ) {
         let (vw, vh) = panel_cfg.viewport_size(true);
         let content = unsafe {
@@ -1063,6 +1070,7 @@ impl NativePanel {
             pet_name,
             &self.target,
             pinned,
+            position_fixed,
             &mut self.counters,
             &mut self.icon_cache,
         );
@@ -1109,7 +1117,7 @@ impl NativePanel {
                     &mut self.counters,
                     &mut self.icon_cache,
                 );
-                attach_button_context_menu(mtm, &b, &self.target, index, button);
+                attach_button_context_menu(mtm, &b, &self.target, index, button, position_fixed);
                 grid_container.addSubview(&b);
                 b
             };
@@ -1136,6 +1144,7 @@ fn attach_button_context_menu(
     target: &ButtonTarget,
     index: usize,
     cfg: &ButtonConfig,
+    position_fixed: bool,
 ) {
     let configured = is_button_configured(cfg);
     let has_action = cfg.action.is_configured();
@@ -1172,6 +1181,20 @@ fn attach_button_context_menu(
         add_menu_item(mtm, &menu, target, "删除", index, ButtonMenuAction::Delete);
     }
 
+    menu.addItem(&NSMenuItem::separatorItem(mtm));
+    let pos_title = if position_fixed {
+        "跟随鼠标"
+    } else {
+        "固定位置"
+    };
+    add_menu_item(
+        mtm,
+        &menu,
+        target,
+        pos_title,
+        index,
+        ButtonMenuAction::TogglePositionFixed,
+    );
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     add_menu_item(
         mtm,
@@ -1385,6 +1408,7 @@ fn attach_launcher_context_menu(
     view: &NSView,
     target: &ButtonTarget,
     pinned: bool,
+    position_fixed: bool,
 ) {
     use super::events::LauncherMenuAction;
     let menu = NSMenu::new(mtm);
@@ -1393,8 +1417,14 @@ fn attach_launcher_context_menu(
     } else {
         "钉住面板"
     };
+    let pos_title = if position_fixed {
+        "跟随鼠标"
+    } else {
+        "固定位置"
+    };
     for (title, action, sep_before) in [
         (pin_title, LauncherMenuAction::TogglePin, false),
+        (pos_title, LauncherMenuAction::TogglePositionFixed, false),
         ("恢复完整模式", LauncherMenuAction::ExpandToFull, false),
         ("设置", LauncherMenuAction::Settings, true),
         ("退出", LauncherMenuAction::Quit, true),
@@ -1419,13 +1449,18 @@ fn attach_launcher_context_menu(
     }
 }
 
-fn fingerprint(panel: &PanelConfig, buttons: &[ButtonConfig], pinned: bool) -> String {
+fn fingerprint(
+    panel: &PanelConfig,
+    buttons: &[ButtonConfig],
+    pinned: bool,
+    position_fixed: bool,
+) -> String {
     use std::fmt::Write;
     let mut s = String::new();
     let style = &panel.ui_style;
     let _ = write!(
         &mut s,
-        "{}x{}:{:.0}x{:.0}:{:.0}x{:.0}:{:?}:{:.2}:{}:{}:{}|style:{}:{:.1}:{:?}:{:?}:{:?}:{:?}:{:?}:{:.1}:{:.1}:{}:{:.1}:{:?}",
+        "{}x{}:{:.0}x{:.0}:{:.0}x{:.0}:{:?}:{:.2}:{}:{}:{}:{}|style:{}:{:.1}:{:?}:{:?}:{:?}:{:?}:{:?}:{:.1}:{:.1}:{}:{:.1}:{:?}",
         panel.cols,
         panel.rows,
         panel.button_width,
@@ -1436,6 +1471,7 @@ fn fingerprint(panel: &PanelConfig, buttons: &[ButtonConfig], pinned: bool) -> S
         panel.opacity,
         panel.collapsed,
         pinned,
+        position_fixed,
         buttons.len(),
         // ui_style：边框/圆角/配色变更必须触发重建，否则按钮 layer 仍用旧样式
         style.button_border_enabled,

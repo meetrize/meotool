@@ -80,6 +80,8 @@ pub struct GestureSettingsFile {
     pub dismiss_on_outside_click: Option<bool>,
     pub hide_after_button: Option<bool>,
     pub global_priority: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position_fixed: Option<bool>,
 }
 
 impl GestureSettingsFile {
@@ -96,6 +98,7 @@ impl GestureSettingsFile {
                 .unwrap_or(defaults.dismiss_on_outside_click),
             hide_after_button: self.hide_after_button.unwrap_or(defaults.hide_after_button),
             global_priority: self.global_priority.unwrap_or(defaults.global_priority),
+            position_fixed: self.position_fixed.unwrap_or(defaults.position_fixed),
         }
     }
 }

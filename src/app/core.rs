@@ -141,6 +141,16 @@ impl AppCore {
         self.pinned = !self.pinned;
     }
 
+    /// 切换「固定位置 / 跟随鼠标」。返回切换后是否固定。
+    pub fn toggle_position_fixed(&mut self) -> bool {
+        self.app_config.gesture.position_fixed = !self.app_config.gesture.position_fixed;
+        self.app_config.gesture.position_fixed
+    }
+
+    pub fn position_fixed(&self) -> bool {
+        self.app_config.gesture.position_fixed
+    }
+
     pub fn handle(&mut self, cmd: CoreCommand) -> CoreEffect {
         match cmd {
             CoreCommand::ToggleVisibility => {
@@ -208,11 +218,13 @@ impl AppCore {
     }
 
     fn show_at(&mut self, x: f32, y: f32) {
-        let (w, h) = self.viewport_size();
-        self.panel.position.x = x - w / 2.0;
-        self.panel.position.y = y - h / 2.0;
-        self.app_config.global_panel.position.x = self.panel.position.x;
-        self.app_config.global_panel.position.y = self.panel.position.y;
+        if !self.app_config.gesture.position_fixed {
+            let (w, h) = self.viewport_size();
+            self.panel.position.x = x - w / 2.0;
+            self.panel.position.y = y - h / 2.0;
+            self.app_config.global_panel.position.x = self.panel.position.x;
+            self.app_config.global_panel.position.y = self.panel.position.y;
+        }
         self.visible = true;
         self.gesture_session = true;
     }

@@ -101,6 +101,7 @@ fn gesture_settings_to_file(gesture: &super::app_config::GestureConfig) -> Gestu
         dismiss_on_outside_click: Some(gesture.dismiss_on_outside_click),
         hide_after_button: Some(gesture.hide_after_button),
         global_priority: Some(gesture.global_priority),
+        position_fixed: Some(gesture.position_fixed).filter(|&v| v),
     }
 }
 

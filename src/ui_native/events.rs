@@ -23,6 +23,8 @@ pub enum ButtonMenuAction {
     Settings = 6,
     Quit = 7,
     EditAppearance = 8,
+    /// 固定位置 ↔ 跟随鼠标
+    TogglePositionFixed = 9,
 }
 
 impl ButtonMenuAction {
@@ -36,6 +38,7 @@ impl ButtonMenuAction {
             6 => Some(Self::Settings),
             7 => Some(Self::Quit),
             8 => Some(Self::EditAppearance),
+            9 => Some(Self::TogglePositionFixed),
             _ => None,
         }
     }
@@ -52,6 +55,8 @@ pub enum LauncherMenuAction {
     ExpandToFull = 2,
     Settings = 3,
     Quit = 4,
+    /// 固定位置 ↔ 跟随鼠标
+    TogglePositionFixed = 5,
 }
 
 impl LauncherMenuAction {
@@ -61,6 +66,7 @@ impl LauncherMenuAction {
             2 => Some(Self::ExpandToFull),
             3 => Some(Self::Settings),
             4 => Some(Self::Quit),
+            5 => Some(Self::TogglePositionFixed),
             _ => None,
         }
     }

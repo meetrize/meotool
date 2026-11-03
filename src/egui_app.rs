@@ -603,9 +603,36 @@ impl MeoToolApp {
     fn handle_launcher_menu(&mut self, ctx: &egui::Context, action: LauncherMenuAction) {
         match action {
             LauncherMenuAction::TogglePin => self.toggle_pin(ctx),
+            LauncherMenuAction::TogglePositionFixed => self.toggle_position_fixed(),
             LauncherMenuAction::ExpandToFull => self.expand_to_full_mode(ctx),
             LauncherMenuAction::Settings => self.open_settings(ctx),
             LauncherMenuAction::Quit => self.state.request_quit(),
+        }
+    }
+
+    fn toggle_position_fixed(&mut self) {
+        self.state.app_config.gesture.position_fixed = !self.state.app_config.gesture.position_fixed;
+        let fixed = self.state.app_config.gesture.position_fixed;
+        match save_app_config(&self.state.config_path, &self.state.app_config) {
+            Ok(()) => {
+                self.state.hint = Some(crate::ui::HintOverlay::show(
+                    if fixed {
+                        "已固定位置"
+                    } else {
+                        "已跟随鼠标"
+                    }
+                    .into(),
+                ));
+                log::info!(
+                    "panel position {}",
+                    if fixed {
+                        "fixed"
+                    } else {
+                        "follow mouse"
+                    }
+                );
+            }
+            Err(err) => log::error!("save position_fixed failed: {err}"),
         }
     }
 
@@ -642,6 +669,7 @@ impl MeoToolApp {
         match action {
             ButtonMenuAction::Edit => self.open_button_script_editor(ctx, index),
             ButtonMenuAction::EditAppearance => self.open_button_appearance_editor(ctx, index),
+            ButtonMenuAction::TogglePositionFixed => self.toggle_position_fixed(),
             ButtonMenuAction::Settings => self.open_settings(ctx),
             ButtonMenuAction::Quit => self.state.request_quit(),
             ButtonMenuAction::Enable => {
@@ -1507,11 +1535,16 @@ impl eframe::App for MeoToolApp {
         });
 
         let buttons = self.state.panel.padded_buttons();
-        if let Some((index, action)) = self.button_context_menu.show(ctx, &buttons) {
+        let position_fixed = self.state.app_config.gesture.position_fixed;
+        if let Some((index, action)) = self.button_context_menu.show(ctx, &buttons, position_fixed)
+        {
             self.handle_button_menu(ctx, index, action);
         }
 
-        if let Some(action) = self.launcher_context_menu.show(ctx, self.state.pinned) {
+        if let Some(action) =
+            self.launcher_context_menu
+                .show(ctx, self.state.pinned, position_fixed)
+        {
             self.handle_launcher_menu(ctx, action);
         }
 
