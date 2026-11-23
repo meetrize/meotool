@@ -9,8 +9,8 @@ use crate::config::export::app_config_to_file;
 use crate::config::model::{Action, ButtonConfig, MouseMacro};
 use crate::config::color::{color_to_string, parse_color};
 use crate::config::{
-    AppConfig, ButtonScope, ContextMode, DisplayMode, GlobalHotkeys, MatchRule, PanelSettings,
-    Profile, ThemeSettings,
+    AppConfig, ButtonScope, CollapsedIconScale, ContextMode, DisplayMode, GlobalHotkeys, MatchRule,
+    PanelSettings, Profile, ThemeSettings,
 };
 
 use crate::platform::RecordMode;
@@ -440,6 +440,29 @@ impl SettingsEditor {
                         IconPickTarget::CollapsedIcon,
                     );
                 }
+            });
+            ui.horizontal(|ui| {
+                ui.label("折叠图标尺寸");
+                let scale = panel.collapsed_icon_scale.get_or_insert_with(Default::default);
+                egui::ComboBox::from_id_salt("collapsed_icon_scale")
+                    .selected_text(scale.label())
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            scale,
+                            crate::config::CollapsedIconScale::Full,
+                            CollapsedIconScale::Full.label(),
+                        );
+                        ui.selectable_value(
+                            scale,
+                            crate::config::CollapsedIconScale::Half,
+                            CollapsedIconScale::Half.label(),
+                        );
+                        ui.selectable_value(
+                            scale,
+                            crate::config::CollapsedIconScale::Quarter,
+                            CollapsedIconScale::Quarter.label(),
+                        );
+                    });
             });
         }
         if pick_collapsed {

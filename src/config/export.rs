@@ -122,6 +122,10 @@ fn panel_settings_to_file(
         gap_x: settings.gap_x,
         gap_y: settings.gap_y,
         collapsed_icon: settings.collapsed_icon.clone(),
+        collapsed_icon_scale: settings
+            .collapsed_icon_scale
+            .map(|s| s.as_config_str().to_string())
+            .filter(|s| s != "100%"),
         position: position.map(|p| PositionSettings { x: p.x, y: p.y }),
         theme: theme_settings_to_file(&settings.theme),
     }

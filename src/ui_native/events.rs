@@ -57,6 +57,12 @@ pub enum LauncherMenuAction {
     Quit = 4,
     /// 固定位置 ↔ 跟随鼠标
     TogglePositionFixed = 5,
+    /// 折叠图标尺寸 100%
+    SetIconScaleFull = 6,
+    /// 折叠图标尺寸 50%
+    SetIconScaleHalf = 7,
+    /// 折叠图标尺寸 25%
+    SetIconScaleQuarter = 8,
 }
 
 impl LauncherMenuAction {
@@ -67,6 +73,9 @@ impl LauncherMenuAction {
             3 => Some(Self::Settings),
             4 => Some(Self::Quit),
             5 => Some(Self::TogglePositionFixed),
+            6 => Some(Self::SetIconScaleFull),
+            7 => Some(Self::SetIconScaleHalf),
+            8 => Some(Self::SetIconScaleQuarter),
             _ => None,
         }
     }

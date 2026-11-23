@@ -259,6 +259,7 @@ struct GlobalFields {
     display_mode: Retained<NSPopUpButton>,
     collapsed: Retained<NSSwitch>,
     collapsed_icon: Retained<NSTextField>,
+    collapsed_icon_scale: Retained<NSPopUpButton>,
     opacity: Retained<NSSlider>,
     opacity_label: Retained<NSTextField>,
     pos_x: Retained<NSTextField>,
@@ -885,6 +886,15 @@ impl SettingsWindow {
                 .as_deref()
                 .unwrap_or(crate::config::PanelConfig::DEFAULT_COLLAPSED_ICON),
         );
+        unsafe {
+            self.global
+                .collapsed_icon_scale
+                .selectItemAtIndex(match g.collapsed_icon_scale.unwrap_or_default() {
+                    crate::config::CollapsedIconScale::Half => 1,
+                    crate::config::CollapsedIconScale::Quarter => 2,
+                    crate::config::CollapsedIconScale::Full => 0,
+                });
+        }
         let opacity = g.opacity.unwrap_or(0.85) as f64;
         unsafe {
             self.global.opacity.setDoubleValue(opacity);
@@ -1222,6 +1232,12 @@ impl SettingsWindow {
         self.draft.global_panel.settings.collapsed = Some(switch_on(&self.global.collapsed));
         self.draft.global_panel.settings.collapsed_icon =
             Some(field_string(&self.global.collapsed_icon));
+        let scale_idx = unsafe { self.global.collapsed_icon_scale.indexOfSelectedItem() };
+        self.draft.global_panel.settings.collapsed_icon_scale = Some(match scale_idx {
+            1 => crate::config::CollapsedIconScale::Half,
+            2 => crate::config::CollapsedIconScale::Quarter,
+            _ => crate::config::CollapsedIconScale::Full,
+        });
         self.draft.global_panel.settings.display_mode = Some(match mode_idx {
             1 => DisplayMode::Icon,
             2 => DisplayMode::IndexIcon,
@@ -1393,6 +1409,12 @@ fn build_general_page(
         pick.setAction(Some(objc2::sel!(pickCollapsedIcon:)));
     }
     add_arranged(&r5, &pick);
+    let (r5b, collapsed_icon_scale) = labeled_popup(
+        mtm,
+        "折叠图标尺寸",
+        &["100%（默认）", "50%", "25%"],
+        200.0,
+    );
 
     let (opacity_row, opacity, opacity_label) =
         labeled_float_slider(mtm, target, "透明度", 0.2, 1.0, "0.85");
@@ -1432,13 +1454,27 @@ fn build_general_page(
         display_mode.setAction(Some(objc2::sel!(fieldChanged:)));
         collapsed.setTarget(Some(target));
         collapsed.setAction(Some(objc2::sel!(fieldChanged:)));
+        collapsed_icon_scale.setTarget(Some(target));
+        collapsed_icon_scale.setAction(Some(objc2::sel!(fieldChanged:)));
         context_mode.setTarget(Some(target));
         context_mode.setAction(Some(objc2::sel!(fieldChanged:)));
         tray_show_buttons.setTarget(Some(target));
         tray_show_buttons.setAction(Some(objc2::sel!(fieldChanged:)));
     }
 
-    for row in [&r1, &r2, &r3, &r4, &r5, &opacity_row, &r7, &r8, &r9, &r10] {
+    for row in [
+        &r1,
+        &r2,
+        &r3,
+        &r4,
+        &r5,
+        &r5b,
+        &opacity_row,
+        &r7,
+        &r8,
+        &r9,
+        &r10,
+    ] {
         add_arranged(&page, row);
     }
     add_arranged(&page, &help);
@@ -1459,6 +1495,7 @@ fn build_general_page(
             display_mode,
             collapsed,
             collapsed_icon,
+            collapsed_icon_scale,
             opacity,
             opacity_label,
             pos_x,

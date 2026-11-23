@@ -8,14 +8,17 @@ use crate::ui::icons::IconCache;
 use crate::ui::modes::paint_button;
 use crate::ui::theme::Theme;
 
-const LAUNCHER_W: f32 = PanelConfig::COLLAPSED_LAUNCHER_WIDTH;
-const LAUNCHER_H: f32 = PanelConfig::COLLAPSED_LAUNCHER_HEIGHT;
-/// 布局占位（含 bleed），保证桌宠与描边不被裁切
-const LAUNCHER_ALLOC: Vec2 = Vec2::new(
-    PanelConfig::COLLAPSED_LAUNCHER_WIDTH + PanelConfig::COLLAPSED_LAUNCHER_BLEED * 2.0,
-    PanelConfig::COLLAPSED_LAUNCHER_HEIGHT + PanelConfig::COLLAPSED_LAUNCHER_BLEED * 2.0,
-);
 const COLLAPSE_DELAY: Duration = Duration::from_millis(500);
+
+fn launcher_content_size(panel: &PanelConfig) -> Vec2 {
+    let (w, h) = panel.collapsed_launcher_content_size();
+    Vec2::new(w, h)
+}
+
+fn launcher_alloc_size(panel: &PanelConfig) -> Vec2 {
+    let (w, h) = panel.collapsed_launcher_alloc();
+    Vec2::new(w, h)
+}
 
 fn pointer_hovered(ctx: &egui::Context, rect: egui::Rect) -> bool {
     ctx.input(|i| i.pointer.hover_pos().is_some_and(|pos| rect.contains(pos)))
@@ -103,14 +106,15 @@ pub fn show_collapsed(
     let mut expand_to_full = false;
 
     let (full_w, full_h) = panel.panel_size();
+    let launcher_alloc = launcher_alloc_size(panel);
     // 布局与窗口始终占满展开尺寸；展开只切换绘制，尺寸不变 → 图标零闪动
-    let content_w = LAUNCHER_ALLOC.x.max(full_w);
-    let content_h = LAUNCHER_ALLOC.y + panel.gap_y + full_h;
+    let content_w = launcher_alloc.x.max(full_w);
+    let content_h = launcher_alloc.y + panel.gap_y + full_h;
 
     let origin = ui.available_rect_before_wrap().min;
     let launcher_rect = egui::Rect::from_min_size(
-        egui::pos2(origin.x + (content_w - LAUNCHER_ALLOC.x) * 0.5, origin.y),
-        LAUNCHER_ALLOC,
+        egui::pos2(origin.x + (content_w - launcher_alloc.x) * 0.5, origin.y),
+        launcher_alloc,
     );
 
     // 在分配布局前先检测图标 hover，同一帧即可展开
@@ -125,10 +129,10 @@ pub fn show_collapsed(
     // 图标与按钮面板共用水平中心：面板左右边缘相对图标中心等距
     let launcher_rect = egui::Rect::from_min_size(
         egui::pos2(
-            rect.min.x + (content_w - LAUNCHER_ALLOC.x) * 0.5,
+            rect.min.x + (content_w - launcher_alloc.x) * 0.5,
             rect.min.y,
         ),
-        LAUNCHER_ALLOC,
+        launcher_alloc,
     );
     let launcher_resp = ui.interact(
         launcher_rect,
@@ -165,7 +169,7 @@ pub fn show_collapsed(
     let grid_rect = egui::Rect::from_min_size(
         egui::pos2(
             rect.min.x + (content_w - full_w) * 0.5,
-            rect.min.y + LAUNCHER_ALLOC.y + panel.gap_y,
+            rect.min.y + launcher_alloc.y + panel.gap_y,
         ),
         Vec2::new(full_w, full_h),
     );
@@ -237,7 +241,8 @@ fn paint_launcher(
     rect: egui::Rect,
 ) {
     let center = rect.center();
-    let radius = LAUNCHER_H.min(LAUNCHER_W) / 2.0;
+    let content = launcher_content_size(panel);
+    let radius = content.y.min(content.x) / 2.0;
 
     // 配置了折叠图标时：彩色原图直接浮在透明窗口上，像桌面宠物
     if let Some(icon_name) = panel
@@ -247,8 +252,7 @@ fn paint_launcher(
     {
         if let Some(texture) = icons.get_colored(ui.ctx(), icon_name) {
             let tex_size = texture.size_vec2();
-            let avail = Vec2::new(LAUNCHER_W, LAUNCHER_H);
-            let scale = (avail.x / tex_size.x).min(avail.y / tex_size.y);
+            let scale = (content.x / tex_size.x).min(content.y / tex_size.y);
             let display = tex_size * scale;
             let icon_rect = egui::Rect::from_center_size(center, display);
 

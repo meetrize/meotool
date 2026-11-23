@@ -109,6 +109,8 @@ pub struct PanelSettings {
     /// 按钮上下间距
     pub gap_y: Option<f32>,
     pub collapsed_icon: Option<String>,
+    /// 折叠常驻图标缩放：`"100%"` / `"50%"` / `"25%"`
+    pub collapsed_icon_scale: Option<crate::config::CollapsedIconScale>,
     pub theme: ThemeSettings,
 }
 
@@ -274,6 +276,10 @@ impl AppConfig {
                 .clone()
                 .filter(|s| !s.trim().is_empty())
                 .or_else(|| g.collapsed_icon.clone().filter(|s| !s.trim().is_empty())),
+            collapsed_icon_scale: p
+                .collapsed_icon_scale
+                .or(g.collapsed_icon_scale)
+                .unwrap_or_default(),
             buttons: profile.buttons.clone(),
             ui_style: theme,
         }

@@ -133,6 +133,9 @@ pub struct PanelSettingsFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gap_y: Option<f32>,
     pub collapsed_icon: Option<String>,
+    /// `"100%"` / `"50%"` / `"25%"`；缺省为 100%
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collapsed_icon_scale: Option<String>,
     pub position: Option<PositionSettings>,
     #[serde(default)]
     pub theme: ThemeSettingsFile,
@@ -420,6 +423,10 @@ impl PanelSettingsFile {
             gap_x: self.gap_x.or(self.gap),
             gap_y: self.gap_y.or(self.gap),
             collapsed_icon: self.collapsed_icon.clone(),
+            collapsed_icon_scale: self
+                .collapsed_icon_scale
+                .as_deref()
+                .and_then(crate::config::CollapsedIconScale::from_str_cfg),
             theme: self.theme.to_theme_settings(),
         }
     }

@@ -5,6 +5,51 @@ pub enum DisplayMode {
     IndexIcon,
 }
 
+/// 折叠模式常驻图标相对默认尺寸的缩放。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CollapsedIconScale {
+    #[default]
+    Full,
+    Half,
+    Quarter,
+}
+
+impl CollapsedIconScale {
+    pub const fn factor(self) -> f32 {
+        match self {
+            Self::Full => 1.0,
+            Self::Half => 0.5,
+            Self::Quarter => 0.25,
+        }
+    }
+
+    #[allow(dead_code)] // egui 设置面板使用
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Full => "100%",
+            Self::Half => "50%",
+            Self::Quarter => "25%",
+        }
+    }
+
+    pub fn from_str_cfg(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "100" | "100%" | "full" | "1" | "1.0" => Some(Self::Full),
+            "50" | "50%" | "half" | "0.5" => Some(Self::Half),
+            "25" | "25%" | "quarter" | "0.25" => Some(Self::Quarter),
+            _ => None,
+        }
+    }
+
+    pub const fn as_config_str(self) -> &'static str {
+        match self {
+            Self::Full => "100%",
+            Self::Half => "50%",
+            Self::Quarter => "25%",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Position {
     pub x: f32,
@@ -68,6 +113,8 @@ pub struct PanelConfig {
     pub gap_y: f32,
     pub position: Position,
     pub collapsed_icon: Option<String>,
+    /// 折叠常驻图标缩放（相对默认 104×72）
+    pub collapsed_icon_scale: CollapsedIconScale,
     pub buttons: Vec<ButtonConfig>,
     pub ui_style: UiStyle,
 }
@@ -520,7 +567,7 @@ pub enum Key {
 }
 
 impl PanelConfig {
-    /// 折叠桌宠显示宽高（接近 pet-cat.png 横版比例）
+    /// 折叠桌宠显示宽高（接近 pet-cat.png 横版比例；再乘以 collapsed_icon_scale）
     pub const COLLAPSED_LAUNCHER_WIDTH: f32 = 104.0;
     pub const COLLAPSED_LAUNCHER_HEIGHT: f32 = 72.0;
     /// 抗锯齿与描边所需的额外边距（单侧），避免被窗口/裁剪矩形切边
@@ -537,10 +584,21 @@ impl PanelConfig {
         (w, h)
     }
 
-    pub fn collapsed_launcher_alloc() -> (f32, f32) {
+    /// 折叠桌宠内容区尺寸（不含 bleed）
+    pub fn collapsed_launcher_content_size(&self) -> (f32, f32) {
+        let f = self.collapsed_icon_scale.factor();
         (
-            Self::COLLAPSED_LAUNCHER_WIDTH + Self::COLLAPSED_LAUNCHER_BLEED * 2.0,
-            Self::COLLAPSED_LAUNCHER_HEIGHT + Self::COLLAPSED_LAUNCHER_BLEED * 2.0,
+            Self::COLLAPSED_LAUNCHER_WIDTH * f,
+            Self::COLLAPSED_LAUNCHER_HEIGHT * f,
+        )
+    }
+
+    /// 折叠桌宠布局占位（含 bleed）
+    pub fn collapsed_launcher_alloc(&self) -> (f32, f32) {
+        let (w, h) = self.collapsed_launcher_content_size();
+        (
+            w + Self::COLLAPSED_LAUNCHER_BLEED * 2.0,
+            h + Self::COLLAPSED_LAUNCHER_BLEED * 2.0,
         )
     }
 
@@ -549,7 +607,7 @@ impl PanelConfig {
     pub fn collapsed_viewport_size(&self, _expanded: bool) -> (f32, f32) {
         let pad = Self::PANEL_PADDING * 2.0;
         let (full_w, full_h) = self.panel_size();
-        let (launcher_w, launcher_h) = Self::collapsed_launcher_alloc();
+        let (launcher_w, launcher_h) = self.collapsed_launcher_alloc();
         (
             launcher_w.max(full_w) + pad,
             launcher_h + self.gap_y + full_h + pad,
@@ -678,6 +736,39 @@ mod tests {
     }
 
     #[test]
+    fn collapsed_icon_scale_parses_and_factors() {
+        assert_eq!(
+            CollapsedIconScale::from_str_cfg("50%"),
+            Some(CollapsedIconScale::Half)
+        );
+        assert_eq!(
+            CollapsedIconScale::from_str_cfg("0.25"),
+            Some(CollapsedIconScale::Quarter)
+        );
+        assert!((CollapsedIconScale::Half.factor() - 0.5).abs() < f32::EPSILON);
+        assert!((CollapsedIconScale::Quarter.factor() - 0.25).abs() < f32::EPSILON);
+        let panel = PanelConfig {
+            rows: 1,
+            cols: 1,
+            display_mode: DisplayMode::Icon,
+            collapsed: true,
+            opacity: 1.0,
+            button_width: 64.0,
+            button_height: 64.0,
+            gap_x: 4.0,
+            gap_y: 4.0,
+            position: Position { x: 0.0, y: 0.0 },
+            collapsed_icon: None,
+            collapsed_icon_scale: CollapsedIconScale::Half,
+            buttons: vec![],
+            ui_style: UiStyle::default(),
+        };
+        let (w, h) = panel.collapsed_launcher_content_size();
+        assert!((w - PanelConfig::COLLAPSED_LAUNCHER_WIDTH * 0.5).abs() < 0.01);
+        assert!((h - PanelConfig::COLLAPSED_LAUNCHER_HEIGHT * 0.5).abs() < 0.01);
+    }
+
+    #[test]
     fn always_visible_with_any_window() {
         let scope = ButtonScope::Always;
         assert!(scope.is_visible(None));
@@ -712,6 +803,7 @@ mod tests {
             gap_y: 4.0,
             position: Position { x: 0.0, y: 0.0 },
             collapsed_icon: None,
+            collapsed_icon_scale: CollapsedIconScale::Full,
             buttons: vec![
                 button("A", ButtonScope::Always),
                 button("B", vscode_scope()),
@@ -776,6 +868,7 @@ mod tests {
             gap_y: 4.0,
             position: Position { x: 0.0, y: 0.0 },
             collapsed_icon: None,
+            collapsed_icon_scale: CollapsedIconScale::Full,
             buttons: vec![always, scoped, disabled, no_flag, empty_label],
             ui_style: UiStyle::default(),
         };

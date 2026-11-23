@@ -49,9 +49,9 @@ pub use script_presets::{
     QUICK_PRESETS,
 };
 pub use model::{
-    empty_slot_button, Action, ActionScript, ButtonConfig, ButtonScope, CoordSpace, DisplayMode,
-    FlowProgram, FlowStep, Key, MacroStep, MatchRule, MouseButtonKind, MouseMacro, PanelConfig,
-    SpecialKey,
+    empty_slot_button, Action, ActionScript, ButtonConfig, ButtonScope, CollapsedIconScale,
+    CoordSpace, DisplayMode, FlowProgram, FlowStep, Key, MacroStep, MatchRule, MouseButtonKind,
+    MouseMacro, PanelConfig, SpecialKey,
 };
 #[allow(unused_imports)]
 pub use normalize::normalize_app_config;

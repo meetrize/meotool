@@ -1,7 +1,7 @@
 use eframe::egui::{self, Context, Pos2, Ui};
 use std::time::{Duration, Instant};
 
-use crate::config::ButtonConfig;
+use crate::config::{ButtonConfig, CollapsedIconScale};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LauncherMenuAction {
@@ -10,6 +10,7 @@ pub enum LauncherMenuAction {
     ExpandToFull,
     Settings,
     Quit,
+    SetIconScale(CollapsedIconScale),
 }
 
 pub struct LauncherContextMenu {
@@ -62,6 +63,7 @@ impl LauncherContextMenu {
         ctx: &Context,
         pinned: bool,
         position_fixed: bool,
+        icon_scale: CollapsedIconScale,
     ) -> Option<LauncherMenuAction> {
         if !self.open {
             return None;
@@ -90,7 +92,7 @@ impl LauncherContextMenu {
             .show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(140.0);
-                    draw_launcher_menu_items(ui, pinned, position_fixed, &mut action);
+                    draw_launcher_menu_items(ui, pinned, position_fixed, icon_scale, &mut action);
                 })
             })
             .response
@@ -117,6 +119,7 @@ fn draw_launcher_menu_items(
     ui: &mut Ui,
     pinned: bool,
     position_fixed: bool,
+    icon_scale: CollapsedIconScale,
     action: &mut Option<LauncherMenuAction>,
 ) {
     if pinned {
@@ -139,6 +142,26 @@ fn draw_launcher_menu_items(
     if ui.button("恢复完整模式").clicked() {
         *action = Some(LauncherMenuAction::ExpandToFull);
     }
+
+    ui.separator();
+    ui.menu_button("图标尺寸", |ui| {
+        for scale in [
+            CollapsedIconScale::Full,
+            CollapsedIconScale::Half,
+            CollapsedIconScale::Quarter,
+        ] {
+            let selected = icon_scale == scale;
+            let label = if selected {
+                format!("✓ {}", scale.label())
+            } else {
+                format!("    {}", scale.label())
+            };
+            if ui.button(label).clicked() {
+                *action = Some(LauncherMenuAction::SetIconScale(scale));
+                ui.close_menu();
+            }
+        }
+    });
 
     ui.separator();
 

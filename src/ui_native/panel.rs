@@ -231,6 +231,7 @@ impl PetLauncher {
         target: &ButtonTarget,
         pinned: bool,
         position_fixed: bool,
+        icon_scale: crate::config::CollapsedIconScale,
         counters: &mut NativeMemoryCounters,
         icon_cache: &mut NativeIconCache,
     ) -> Retained<Self> {
@@ -246,8 +247,10 @@ impl PetLauncher {
             );
             img_view.setImageScaling(NSImageScaling::ScaleProportionallyDown);
             if let Some(img) = icon_cache.load(mtm, icon_dirs, pet_name, counters) {
-                let avail_w = PanelConfig::COLLAPSED_LAUNCHER_WIDTH as f64;
-                let avail_h = PanelConfig::COLLAPSED_LAUNCHER_HEIGHT as f64;
+                // frame 含 bleed；内容区按 collapsed_icon_scale 缩放
+                let bleed = PanelConfig::COLLAPSED_LAUNCHER_BLEED as f64;
+                let avail_w = (frame.size.width - bleed * 2.0).max(1.0);
+                let avail_h = (frame.size.height - bleed * 2.0).max(1.0);
                 let size = img.size();
                 let scale = (avail_w / size.width).min(avail_h / size.height);
                 img.setSize(NSSize::new(size.width * scale, size.height * scale));
@@ -255,7 +258,14 @@ impl PetLauncher {
             }
             view.addSubview(&img_view);
         }
-        attach_launcher_context_menu(mtm, view.as_ref(), target, pinned, position_fixed);
+        attach_launcher_context_menu(
+            mtm,
+            view.as_ref(),
+            target,
+            pinned,
+            position_fixed,
+            icon_scale,
+        );
         view
     }
 }
@@ -799,7 +809,7 @@ impl NativePanel {
                 }
                 let (x, y) = if panel_cfg.collapsed {
                     let (full_w, _) = panel_cfg.panel_size();
-                    let lh = PanelConfig::collapsed_launcher_alloc().1 as f64;
+                    let lh = panel_cfg.collapsed_launcher_alloc().1 as f64;
                     let grid_x = ((vw - full_w as f64) * 0.5).max(0.0);
                     let grid_top = lh + gap_y;
                     let grid_height = rows as f64 * bh + (rows.saturating_sub(1)) as f64 * gap_y;
@@ -1043,7 +1053,7 @@ impl NativePanel {
             paint_view_background(&content, bg, 0.0);
         }
 
-        let (lw, lh) = PanelConfig::collapsed_launcher_alloc();
+        let (lw, lh) = panel_cfg.collapsed_launcher_alloc();
         let gap_x = panel_cfg.gap_x as f64;
         let gap_y = panel_cfg.gap_y as f64;
         let (full_w, _) = panel_cfg.panel_size();
@@ -1071,6 +1081,7 @@ impl NativePanel {
             &self.target,
             pinned,
             position_fixed,
+            panel_cfg.collapsed_icon_scale,
             &mut self.counters,
             &mut self.icon_cache,
         );
@@ -1409,8 +1420,10 @@ fn attach_launcher_context_menu(
     target: &ButtonTarget,
     pinned: bool,
     position_fixed: bool,
+    icon_scale: crate::config::CollapsedIconScale,
 ) {
     use super::events::LauncherMenuAction;
+    use objc2_app_kit::{NSControlStateValueOff, NSControlStateValueOn};
     let menu = NSMenu::new(mtm);
     let pin_title = if pinned {
         "取消钉住"
@@ -1426,12 +1439,74 @@ fn attach_launcher_context_menu(
         (pin_title, LauncherMenuAction::TogglePin, false),
         (pos_title, LauncherMenuAction::TogglePositionFixed, false),
         ("恢复完整模式", LauncherMenuAction::ExpandToFull, false),
-        ("设置", LauncherMenuAction::Settings, true),
-        ("退出", LauncherMenuAction::Quit, true),
     ] {
         if sep_before {
             menu.addItem(&NSMenuItem::separatorItem(mtm));
         }
+        unsafe {
+            let item = NSMenuItem::initWithTitle_action_keyEquivalent(
+                mtm.alloc(),
+                &NSString::from_str(title),
+                Some(objc2::sel!(launcherMenuClicked:)),
+                &NSString::from_str(""),
+            );
+            item.setTarget(Some(target));
+            item.setTag(action as isize);
+            menu.addItem(&item);
+        }
+    }
+
+    // 二级菜单：图标尺寸
+    menu.addItem(&NSMenuItem::separatorItem(mtm));
+    unsafe {
+        let size_item = NSMenuItem::initWithTitle_action_keyEquivalent(
+            mtm.alloc(),
+            &NSString::from_str("图标尺寸"),
+            None,
+            &NSString::from_str(""),
+        );
+        let size_menu = NSMenu::initWithTitle(mtm.alloc(), &NSString::from_str("图标尺寸"));
+        for (title, action, selected) in [
+            (
+                "100%",
+                LauncherMenuAction::SetIconScaleFull,
+                icon_scale == crate::config::CollapsedIconScale::Full,
+            ),
+            (
+                "50%",
+                LauncherMenuAction::SetIconScaleHalf,
+                icon_scale == crate::config::CollapsedIconScale::Half,
+            ),
+            (
+                "25%",
+                LauncherMenuAction::SetIconScaleQuarter,
+                icon_scale == crate::config::CollapsedIconScale::Quarter,
+            ),
+        ] {
+            let item = NSMenuItem::initWithTitle_action_keyEquivalent(
+                mtm.alloc(),
+                &NSString::from_str(title),
+                Some(objc2::sel!(launcherMenuClicked:)),
+                &NSString::from_str(""),
+            );
+            item.setTarget(Some(target));
+            item.setTag(action as isize);
+            item.setState(if selected {
+                NSControlStateValueOn
+            } else {
+                NSControlStateValueOff
+            });
+            size_menu.addItem(&item);
+        }
+        size_item.setSubmenu(Some(&size_menu));
+        menu.addItem(&size_item);
+    }
+
+    for (title, action) in [
+        ("设置", LauncherMenuAction::Settings),
+        ("退出", LauncherMenuAction::Quit),
+    ] {
+        menu.addItem(&NSMenuItem::separatorItem(mtm));
         unsafe {
             let item = NSMenuItem::initWithTitle_action_keyEquivalent(
                 mtm.alloc(),
@@ -1460,7 +1535,7 @@ fn fingerprint(
     let style = &panel.ui_style;
     let _ = write!(
         &mut s,
-        "{}x{}:{:.0}x{:.0}:{:.0}x{:.0}:{:?}:{:.2}:{}:{}:{}:{}|style:{}:{:.1}:{:?}:{:?}:{:?}:{:?}:{:?}:{:.1}:{:.1}:{}:{:.1}:{:?}",
+        "{}x{}:{:.0}x{:.0}:{:.0}x{:.0}:{:?}:{:.2}:{}:{:?}:{:?}:{}:{}:{}|style:{}:{:.1}:{:?}:{:?}:{:?}:{:?}:{:?}:{:.1}:{:.1}:{}:{:.1}:{:?}",
         panel.cols,
         panel.rows,
         panel.button_width,
@@ -1470,6 +1545,8 @@ fn fingerprint(
         panel.display_mode,
         panel.opacity,
         panel.collapsed,
+        panel.collapsed_icon,
+        panel.collapsed_icon_scale,
         pinned,
         position_fixed,
         buttons.len(),

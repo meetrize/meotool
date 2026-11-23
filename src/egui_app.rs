@@ -607,6 +607,26 @@ impl MeoToolApp {
             LauncherMenuAction::ExpandToFull => self.expand_to_full_mode(ctx),
             LauncherMenuAction::Settings => self.open_settings(ctx),
             LauncherMenuAction::Quit => self.state.request_quit(),
+            LauncherMenuAction::SetIconScale(scale) => self.set_collapsed_icon_scale(scale),
+        }
+    }
+
+    fn set_collapsed_icon_scale(&mut self, scale: crate::config::CollapsedIconScale) {
+        self.state
+            .app_config
+            .global_panel
+            .settings
+            .collapsed_icon_scale = Some(scale);
+        // 立即反映到当前 panel
+        self.state.panel.collapsed_icon_scale = scale;
+        match save_app_config(&self.state.config_path, &self.state.app_config) {
+            Ok(()) => {
+                self.state.hint = Some(crate::ui::HintOverlay::show(format!(
+                    "图标尺寸 {}",
+                    scale.label()
+                )));
+            }
+            Err(err) => log::error!("save collapsed_icon_scale failed: {err}"),
         }
     }
 
@@ -1541,10 +1561,12 @@ impl eframe::App for MeoToolApp {
             self.handle_button_menu(ctx, index, action);
         }
 
-        if let Some(action) =
-            self.launcher_context_menu
-                .show(ctx, self.state.pinned, position_fixed)
-        {
+        if let Some(action) = self.launcher_context_menu.show(
+            ctx,
+            self.state.pinned,
+            position_fixed,
+            self.state.panel.collapsed_icon_scale,
+        ) {
             self.handle_launcher_menu(ctx, action);
         }
 

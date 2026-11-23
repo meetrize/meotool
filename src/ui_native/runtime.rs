@@ -1232,8 +1232,32 @@ impl NativeState {
                     LauncherMenuAction::Quit => {
                         let _ = self.core.handle(CoreCommand::Quit);
                     }
+                    LauncherMenuAction::SetIconScaleFull => {
+                        self.set_collapsed_icon_scale(crate::config::CollapsedIconScale::Full);
+                    }
+                    LauncherMenuAction::SetIconScaleHalf => {
+                        self.set_collapsed_icon_scale(crate::config::CollapsedIconScale::Half);
+                    }
+                    LauncherMenuAction::SetIconScaleQuarter => {
+                        self.set_collapsed_icon_scale(crate::config::CollapsedIconScale::Quarter);
+                    }
                 },
             }
+        }
+    }
+
+    fn set_collapsed_icon_scale(&mut self, scale: crate::config::CollapsedIconScale) {
+        let mut cfg = self.core.app_config.clone();
+        cfg.global_panel.settings.collapsed_icon_scale = Some(scale);
+        if let Err(err) = save_app_config(&self.core.config_path, &cfg) {
+            log::error!("save collapsed_icon_scale failed: {err}");
+            return;
+        }
+        log::info!("collapsed icon scale -> {}", scale.as_config_str());
+        let _ = self.core.apply_config(cfg.clone());
+        self.panel_sync_dirty = true;
+        if self.settings.is_visible() {
+            self.settings.reload_from_config(&cfg);
         }
     }
 
