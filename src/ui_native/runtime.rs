@@ -103,6 +103,8 @@ struct CollapsedUiState {
     drag: Option<LauncherDrag>,
     left_was_down: bool,
     last_launcher_click: Option<Instant>,
+    /// 单击（未拖动）后等待双击间隔，再重跑上一次按钮动作
+    pending_last_rerun: Option<Instant>,
 }
 
 /// 拖动跟手：全局/本地鼠标事件监视器（比 50ms tick 平滑）
@@ -201,6 +203,7 @@ impl NativeState {
         self.poll_ui_events();
         self.maybe_prompt_permissions();
         self.update_collapsed_hover();
+        self.poll_pending_launcher_rerun();
         self.update_gesture_leave_hide();
         self.sync_panel_if_needed();
         // sync 之后再命中，保证 button_rects 与布局一致
@@ -807,7 +810,7 @@ impl NativeState {
 
     fn update_collapsed_hover(&mut self) {
         if !self.core.is_collapsed_mode() || !self.core.visible {
-            self.clear_launcher_drag();
+            self.clear_launcher_drag(false);
             self.collapsed_ui.left_was_down = false;
             self.panel.set_ignores_mouse_events(false);
             return;
@@ -829,7 +832,8 @@ impl NativeState {
                 self.panel.set_ignores_mouse_events(false);
                 return;
             }
-            self.clear_launcher_drag();
+            // 松开且未拖动：安排单击重跑
+            self.clear_launcher_drag(true);
         }
 
         if left_down && !self.collapsed_ui.left_was_down && over_launcher {
@@ -841,11 +845,14 @@ impl NativeState {
                 .is_some_and(|t| now.duration_since(t) <= interval);
             if is_double {
                 self.collapsed_ui.last_launcher_click = None;
+                self.collapsed_ui.pending_last_rerun = None;
                 self.collapsed_ui.left_was_down = true;
                 self.set_collapsed_mode(false);
                 return;
             }
             self.collapsed_ui.last_launcher_click = Some(now);
+            // 新一轮按下取消尚未触发的单击重跑
+            self.collapsed_ui.pending_last_rerun = None;
             let (ox, oy) = self.panel.top_left(self.mtm);
             self.collapsed_ui.drag = Some(LauncherDrag {
                 grab_x: mx,
@@ -919,6 +926,7 @@ impl NativeState {
             self.core.app_config.global_panel.position.x = nx as f32;
             self.core.app_config.global_panel.position.y = ny as f32;
             self.collapsed_ui.last_launcher_click = None;
+            self.collapsed_ui.pending_last_rerun = None;
         }
         self.collapsed_ui.drag = Some(drag);
     }
@@ -929,7 +937,7 @@ impl NativeState {
         }
         let left_down = (unsafe { NSEvent::pressedMouseButtons() } & 1) != 0;
         if !left_down {
-            self.clear_launcher_drag();
+            self.clear_launcher_drag(true);
             self.collapsed_ui.left_was_down = false;
             return;
         }
@@ -969,7 +977,8 @@ impl NativeState {
         }
     }
 
-    fn clear_launcher_drag(&mut self) {
+    /// 结束桌宠拖动。`schedule_click`：松开且未拖动时，安排单击重跑上一次命令。
+    fn clear_launcher_drag(&mut self, schedule_click: bool) {
         let moved = self
             .collapsed_ui
             .drag
@@ -979,7 +988,28 @@ impl NativeState {
         self.stop_launcher_drag_monitors();
         if moved {
             self.save_panel_position_now();
+            self.collapsed_ui.pending_last_rerun = None;
+        } else if schedule_click && self.core.is_collapsed_mode() {
+            // 单击未拖动：等双击窗口过后再重跑，避免双击退出时误触发
+            self.collapsed_ui.pending_last_rerun = Some(Instant::now());
         }
+    }
+
+    fn poll_pending_launcher_rerun(&mut self) {
+        let Some(started) = self.collapsed_ui.pending_last_rerun else {
+            return;
+        };
+        let interval = Duration::from_secs_f64(unsafe { NSEvent::doubleClickInterval() });
+        if Instant::now().duration_since(started) <= interval {
+            return;
+        }
+        self.collapsed_ui.pending_last_rerun = None;
+        if !self.core.is_collapsed_mode() {
+            return;
+        }
+        self.mark_activity();
+        let effect = self.core.handle(CoreCommand::TriggerLastButton);
+        self.apply(effect);
     }
 
     fn schedule_position_save(&mut self) {
@@ -1005,7 +1035,9 @@ impl NativeState {
     }
 
     fn set_collapsed_mode(&mut self, collapsed: bool) {
-        self.clear_launcher_drag();
+        // 切换模式不安排单击重跑
+        self.collapsed_ui.pending_last_rerun = None;
+        self.clear_launcher_drag(false);
         let effect = self.core.set_collapsed_enabled(collapsed);
         self.collapsed_ui = CollapsedUiState::default();
         self.panel.set_ignores_mouse_events(false);
@@ -1212,7 +1244,10 @@ impl NativeState {
                     self.handle_button_menu(index, action);
                 }
                 NativeUiEvent::EnterCollapsedMode => self.set_collapsed_mode(true),
-                NativeUiEvent::ExitCollapsedMode => self.set_collapsed_mode(false),
+                NativeUiEvent::ExitCollapsedMode => {
+                    self.collapsed_ui.pending_last_rerun = None;
+                    self.set_collapsed_mode(false);
+                }
                 NativeUiEvent::LauncherInteract => {
                     if self.core.is_collapsed_mode() {
                         self.collapsed_ui.expanded = true;

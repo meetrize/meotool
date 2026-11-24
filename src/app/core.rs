@@ -25,6 +25,8 @@ pub enum CoreCommand {
         button: usize,
     },
     TriggerButton(usize),
+    /// 重跑最近一次按钮动作（折叠图标单击）
+    TriggerLastButton,
     ShowPanelAt {
         x: f32,
         y: f32,
@@ -65,6 +67,8 @@ pub struct AppCore {
     executor: ActionExecutor,
     last_active_window: Option<WindowInfo>,
     resolved_buttons: Vec<ButtonConfig>,
+    /// 最近一次成功选取并执行过的按钮槽位（折叠图标单击可重跑）
+    last_triggered_button: Option<usize>,
 }
 
 impl AppCore {
@@ -98,6 +102,7 @@ impl AppCore {
             executor: ActionExecutor::new(),
             last_active_window: fetch_active_window().filter(|w| !w.is_own_process()),
             resolved_buttons: Vec::new(),
+            last_triggered_button: None,
         };
         if core.is_collapsed_mode() {
             ensure_collapsed_icon(&mut core.app_config);
@@ -178,6 +183,10 @@ impl AppCore {
                 // 未钉住手势会话：不在此处立刻收起，由 UI 在鼠标离开面板后再隐藏，
                 // 避免点按瞬间藏窗导致按钮动作丢失。
                 self.trigger_button(index);
+                CoreEffect::None
+            }
+            CoreCommand::TriggerLastButton => {
+                self.trigger_last_button();
                 CoreEffect::None
             }
             CoreCommand::ReloadConfig => {
@@ -268,7 +277,17 @@ impl AppCore {
         self.restore_target_focus();
         if let Err(err) = self.executor.execute(&button.action) {
             log_action_error(&err);
+            return;
         }
+        self.last_triggered_button = Some(index);
+    }
+
+    fn trigger_last_button(&mut self) {
+        let Some(index) = self.last_triggered_button else {
+            log::info!("no previous button action to replay");
+            return;
+        };
+        self.trigger_button(index);
     }
 
     fn restore_target_focus(&self) {
@@ -550,6 +569,7 @@ mod tests {
             executor: ActionExecutor::new(),
             last_active_window: None,
             resolved_buttons: Vec::new(),
+            last_triggered_button: None,
         };
         core.refresh_resolved_buttons();
         core
