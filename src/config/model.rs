@@ -457,11 +457,11 @@ impl Action {
         match self {
             Action::None => None,
             Action::Script(s) => {
-                let src = s.source.trim();
+                let src = crate::config::script_presets::script_source_for_hover(&s.source);
                 if src.is_empty() {
                     None
                 } else {
-                    Some(truncate_hover_text(src, HOVER_TOOLTIP_MAX_CHARS))
+                    Some(truncate_hover_text(&src, HOVER_TOOLTIP_MAX_CHARS))
                 }
             }
             Action::Hotkey(keys) => {
@@ -897,7 +897,9 @@ mod tests {
         let btn = ButtonConfig {
             label: "保存".into(),
             icon: None,
-            action: Action::Script(ActionScript::from_source("快捷键 Cmd+S\n等待 100\n")),
+            action: Action::Script(ActionScript::from_source(
+                "# 注释应被隐藏\n快捷键 Cmd+S  # 行尾注释\n等待 100\n",
+            )),
             enabled: true,
             background_color: None,
             border_color: None,
@@ -911,5 +913,7 @@ mod tests {
         assert!(tip.contains("快捷键 Cmd+Shift+1"));
         assert!(tip.contains("快捷键 Cmd+S"));
         assert!(tip.contains("等待 100"));
+        assert!(!tip.contains("注释应被隐藏"));
+        assert!(!tip.contains("行尾注释"));
     }
 }

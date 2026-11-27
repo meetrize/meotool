@@ -221,6 +221,41 @@ pub fn is_comments_only(source: &str) -> bool {
     })
 }
 
+/// 去掉行内 `#` 注释（字符串字面量内的 `#` 保留）。
+pub fn strip_script_comment(line: &str) -> &str {
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, ch) in line.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '#' if !in_string => return &line[..i],
+            _ => {}
+        }
+    }
+    line
+}
+
+/// 悬停预览用：去掉注释与空行，只保留可执行脚本行。
+pub fn script_source_for_hover(source: &str) -> String {
+    source
+        .lines()
+        .filter_map(|line| {
+            let code = strip_script_comment(line).trim();
+            if code.is_empty() {
+                None
+            } else {
+                Some(code)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,5 +282,12 @@ mod tests {
     fn is_comments_only_detects() {
         assert!(is_comments_only("# hello\n\n"));
         assert!(!is_comments_only("# c\n输入 \"x\"\n"));
+    }
+
+    #[test]
+    fn script_source_for_hover_strips_comments() {
+        let src = "# 标题\n快捷键 Cmd+S  # 保存\n\n输入 \"a#b\"\n";
+        let out = script_source_for_hover(src);
+        assert_eq!(out, "快捷键 Cmd+S\n输入 \"a#b\"");
     }
 }
